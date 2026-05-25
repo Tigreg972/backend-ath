@@ -4,17 +4,24 @@ import {
   Get,
   Param,
   Post,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+} from '@nestjs/swagger';
+
+import type { Response } from 'express';
 
 import { OrdersService } from './orders.service';
+import { CheckoutDto } from './dto/checkout.dto';
 
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
-import { CheckoutDto } from './dto/checkout.dto';
+import { InvoicesService } from '../invoices/invoices.service';
 
 @ApiTags('Orders')
 @ApiBearerAuth()
@@ -23,6 +30,7 @@ import { CheckoutDto } from './dto/checkout.dto';
 export class OrdersController {
   constructor(
     private readonly ordersService: OrdersService,
+    private readonly invoicesService: InvoicesService,
   ) {}
 
   @Post('checkout')
@@ -41,6 +49,27 @@ export class OrdersController {
     return this.ordersService.findMyOrders(
       user.id,
     );
+  }
+
+  @Get(':id/invoice')
+  async downloadInvoice(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const pdf =
+      await this.invoicesService.generateInvoice(
+        Number(id),
+        user.id,
+      );
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=invoice-${id}.pdf`,
+      'Content-Length': pdf.length,
+    });
+
+    res.end(pdf);
   }
 
   @Get(':id')

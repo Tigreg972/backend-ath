@@ -25,8 +25,28 @@ export class UsersService {
   ) {}
 
   private sanitizeUser(user: User) {
-    const { password, ...safeUser } = user;
+    const {
+      password,
+      resetPasswordToken,
+      resetPasswordExpiresAt,
+      ...safeUser
+    } = user;
+
     return safeUser;
+  }
+
+  async save(user: User): Promise<User> {
+    return this.usersRepository.save(user);
+  }
+
+  async findByResetPasswordToken(
+    token: string,
+  ): Promise<User | null> {
+    return this.usersRepository.findOne({
+      where: {
+        resetPasswordToken: token,
+      },
+    });
   }
 
   async findAll() {
@@ -34,7 +54,9 @@ export class UsersService {
       order: { createdAt: 'DESC' },
     });
 
-    return users.map((user) => this.sanitizeUser(user));
+    return users.map((user) =>
+      this.sanitizeUser(user),
+    );
   }
 
   async findById(id: number): Promise<User> {
@@ -43,7 +65,9 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new NotFoundException('Utilisateur introuvable');
+      throw new NotFoundException(
+        'Utilisateur introuvable',
+      );
     }
 
     return user;
@@ -65,14 +89,21 @@ export class UsersService {
     return this.usersRepository.save(user);
   }
 
-  async updateMyProfile(userId: number, dto: UpdateProfileDto) {
+  async updateMyProfile(
+    userId: number,
+    dto: UpdateProfileDto,
+  ) {
     const user = await this.findById(userId);
 
     if (dto.email && dto.email !== user.email) {
-      const existingUser = await this.findByEmail(dto.email);
+      const existingUser = await this.findByEmail(
+        dto.email,
+      );
 
       if (existingUser) {
-        throw new ConflictException('Cet email est déjà utilisé');
+        throw new ConflictException(
+          'Cet email est déjà utilisé',
+        );
       }
 
       user.email = dto.email;
@@ -92,12 +123,15 @@ export class UsersService {
 
     user.fullName = `${user.firstName} ${user.lastName}`.trim();
 
-    const updatedUser = await this.usersRepository.save(user);
+    const updatedUser =
+      await this.usersRepository.save(user);
 
     return this.sanitizeUser(updatedUser);
   }
 
-  async findMyAddresses(userId: number): Promise<Address[]> {
+  async findMyAddresses(
+    userId: number,
+  ): Promise<Address[]> {
     return this.addressesRepository.find({
       where: { userId },
       order: {
@@ -107,9 +141,15 @@ export class UsersService {
     });
   }
 
-  async createAddress(userId: number, dto: CreateAddressDto): Promise<Address> {
+  async createAddress(
+    userId: number,
+    dto: CreateAddressDto,
+  ): Promise<Address> {
     if (dto.isDefault) {
-      await this.addressesRepository.update({ userId }, { isDefault: false });
+      await this.addressesRepository.update(
+        { userId },
+        { isDefault: false },
+      );
     }
 
     const address = this.addressesRepository.create({
@@ -133,11 +173,16 @@ export class UsersService {
     });
 
     if (!address) {
-      throw new NotFoundException('Adresse introuvable');
+      throw new NotFoundException(
+        'Adresse introuvable',
+      );
     }
 
     if (dto.isDefault) {
-      await this.addressesRepository.update({ userId }, { isDefault: false });
+      await this.addressesRepository.update(
+        { userId },
+        { isDefault: false },
+      );
     }
 
     Object.assign(address, dto);
@@ -145,7 +190,10 @@ export class UsersService {
     return this.addressesRepository.save(address);
   }
 
-  async removeAddress(userId: number, addressId: number) {
+  async removeAddress(
+    userId: number,
+    addressId: number,
+  ) {
     const address = await this.addressesRepository.findOne({
       where: {
         id: addressId,
@@ -154,7 +202,9 @@ export class UsersService {
     });
 
     if (!address) {
-      throw new NotFoundException('Adresse introuvable');
+      throw new NotFoundException(
+        'Adresse introuvable',
+      );
     }
 
     await this.addressesRepository.remove(address);

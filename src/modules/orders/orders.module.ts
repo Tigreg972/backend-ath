@@ -9,6 +9,10 @@ import { OrderItem } from './entities/order-item.entity';
 import { CartItem } from '../cart/entities/cart-item.entity';
 import { Product } from '../catalog/entities/product.entity';
 import { Address } from '../users/entities/address.entity';
+import { User } from '../users/entities/user.entity';
+
+import { MailModule } from '../mail/mail.module';
+import { InvoicesModule } from '../invoices/invoices.module';
 
 @Module({
   imports: [
@@ -18,7 +22,10 @@ import { Address } from '../users/entities/address.entity';
       CartItem,
       Product,
       Address,
+      User,
     ]),
+    MailModule,
+    InvoicesModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

@@ -13,8 +13,11 @@ import { OrderItem } from './entities/order-item.entity';
 import { CartItem } from '../cart/entities/cart-item.entity';
 import { Product } from '../catalog/entities/product.entity';
 import { Address } from '../users/entities/address.entity';
+import { User } from '../users/entities/user.entity';
 
 import { CheckoutDto } from './dto/checkout.dto';
+import { MailService } from '../mail/mail.service';
+import { InvoicesService } from '../invoices/invoices.service';
 
 @Injectable()
 export class OrdersService {
@@ -33,6 +36,12 @@ export class OrdersService {
 
     @InjectRepository(Address)
     private readonly addressesRepository: Repository<Address>,
+
+    @InjectRepository(User)
+    private readonly usersRepository: Repository<User>,
+
+    private readonly mailService: MailService,
+    private readonly invoicesService: InvoicesService,
   ) {}
 
   private buildReference(orderId: number) {
@@ -129,6 +138,26 @@ export class OrdersService {
     await this.ordersRepository.save(savedOrder);
 
     await this.cartItemsRepository.delete({ userId });
+
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (user) {
+      const reference = this.buildReference(savedOrder.id);
+      const invoicePdf = await this.invoicesService.generateInvoice(
+        savedOrder.id,
+        userId,
+      );
+
+      await this.mailService.sendOrderConfirmationEmail(
+        user.email,
+        user.fullName,
+        reference,
+        totalPriceCents,
+        invoicePdf,
+      );
+    }
 
     return {
       id: savedOrder.id,

@@ -11,6 +11,9 @@ import { CatalogModule } from './modules/catalog/catalog.module';
 import { CartModule } from './modules/cart/cart.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { InvoicesModule } from './modules/invoices/invoices.module';
+import { MailModule } from './modules/mail/mail.module';
 
 @Module({
   imports: [
@@ -39,6 +42,9 @@ import { AdminModule } from './modules/admin/admin.module';
     CartModule,
     OrdersModule,
     AdminModule,
+    PaymentsModule,
+    InvoicesModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [AppService],
