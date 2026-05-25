@@ -48,6 +48,74 @@ export class OrdersService {
     return `ALT-${String(orderId).padStart(4, '0')}`;
   }
 
+  private mapShippingAddress(address: Address | null) {
+    if (!address) {
+      return null;
+    }
+
+    return {
+      id: address.id,
+      firstName: address.firstName,
+      lastName: address.lastName,
+      addressLine1: address.addressLine1,
+      addressLine2: address.addressLine2 || '',
+      postalCode: address.postalCode,
+      city: address.city,
+      region: address.region,
+      country: address.country,
+      phone: address.phone,
+    };
+  }
+
+  private mapOrderItem(item: OrderItem) {
+    const firstImage = item.product?.images?.[0]?.url || '';
+
+    return {
+      id: item.id,
+      productId: item.productId,
+      name: item.productName,
+      quantity: item.quantity,
+      priceCents: item.unitPriceCents,
+      totalCents: item.totalCents,
+      imageUrl: firstImage,
+      product: item.product
+        ? {
+            id: item.product.id,
+            name: item.product.name,
+            slug: item.product.slug,
+            priceCents: item.product.priceCents,
+            stock: item.product.stock,
+            imageUrl: firstImage,
+            images: item.product.images || [],
+          }
+        : null,
+    };
+  }
+
+  private async mapOrder(order: Order) {
+    let shippingAddress: Address | null = null;
+
+    if (order.shippingAddressId) {
+      shippingAddress = await this.addressesRepository.findOne({
+        where: {
+          id: order.shippingAddressId,
+          userId: order.userId,
+        },
+      });
+    }
+
+    return {
+      id: order.id,
+      reference: this.buildReference(order.id),
+      status: order.status,
+      createdAt: order.createdAt,
+      totalPriceCents: order.totalCents,
+      paymentMethod: order.paymentMethod,
+      shippingAddress: this.mapShippingAddress(shippingAddress),
+      items: (order.items || []).map((item) => this.mapOrderItem(item)),
+    };
+  }
+
   async checkout(userId: number, dto: CheckoutDto) {
     const cartItems = await this.cartItemsRepository.find({
       where: { userId },
@@ -90,6 +158,8 @@ export class OrdersService {
       name: string;
       quantity: number;
       priceCents: number;
+      totalCents: number;
+      imageUrl: string;
     }[] = [];
 
     for (const cartItem of cartItems) {
@@ -122,12 +192,16 @@ export class OrdersService {
 
       const savedItem = await this.orderItemsRepository.save(orderItem);
 
+      const imageUrl = product.images?.[0]?.url || '';
+
       responseItems.push({
         id: savedItem.id,
         productId: product.id,
         name: product.name,
         quantity: savedItem.quantity,
         priceCents: savedItem.unitPriceCents,
+        totalCents: savedItem.totalCents,
+        imageUrl,
       });
 
       product.stock -= cartItem.quantity;
@@ -145,6 +219,7 @@ export class OrdersService {
 
     if (user) {
       const reference = this.buildReference(savedOrder.id);
+
       const invoicePdf = await this.invoicesService.generateInvoice(
         savedOrder.id,
         userId,
@@ -166,14 +241,7 @@ export class OrdersService {
       createdAt: savedOrder.createdAt,
       totalPriceCents,
       items: responseItems,
-      shippingAddress: shippingAddress
-        ? {
-            addressLine1: shippingAddress.addressLine1,
-            postalCode: shippingAddress.postalCode,
-            city: shippingAddress.city,
-            country: shippingAddress.country,
-          }
-        : null,
+      shippingAddress: this.mapShippingAddress(shippingAddress),
       paymentMethod: savedOrder.paymentMethod,
     };
   }
@@ -186,14 +254,11 @@ export class OrdersService {
       },
     });
 
-    return orders.map((order) => ({
-      id: order.id,
-      reference: this.buildReference(order.id),
-      status: order.status,
-      createdAt: order.createdAt,
-      totalPriceCents: order.totalCents,
-      paymentMethod: order.paymentMethod,
-    }));
+    const mappedOrders = await Promise.all(
+      orders.map((order) => this.mapOrder(order)),
+    );
+
+    return mappedOrders;
   }
 
   async findOrderById(userId: number, orderId: number) {
@@ -208,20 +273,6 @@ export class OrdersService {
       throw new NotFoundException('Commande introuvable');
     }
 
-    return {
-      id: order.id,
-      reference: this.buildReference(order.id),
-      status: order.status,
-      createdAt: order.createdAt,
-      totalPriceCents: order.totalCents,
-      paymentMethod: order.paymentMethod,
-      items: order.items.map((item) => ({
-        id: item.id,
-        productId: item.productId,
-        name: item.productName,
-        quantity: item.quantity,
-        priceCents: item.unitPriceCents,
-      })),
-    };
+    return this.mapOrder(order);
   }
 }
