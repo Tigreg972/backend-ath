@@ -73,17 +73,22 @@ export class UsersService {
 
   async findSafeById(id: number) {
     const user = await this.findById(id);
+
     return this.sanitizeUser(user);
   }
 
   async findByEmail(email: string): Promise<User | null> {
     return this.usersRepository.findOne({
-      where: { email },
+      where: {
+        email,
+        isActive: true,
+      },
     });
   }
 
   async create(data: Partial<User>): Promise<User> {
     const user = this.usersRepository.create(data);
+
     return this.usersRepository.save(user);
   }
 
@@ -165,10 +170,24 @@ export class UsersService {
   async deleteMyAccount(userId: number) {
     const user = await this.findById(userId);
 
-    user.isActive = false;
-    user.email = `deleted_${user.id}_${user.email}`;
+    user.firstName = 'Utilisateur';
+    user.lastName = 'Supprimé';
+    user.fullName = 'Utilisateur supprimé';
+
+    user.phone = undefined;
+
+    user.email = `deleted_${user.id}_${Date.now()}@deleted.local`;
+
+    user.password = await bcrypt.hash(
+      `deleted_${Date.now()}_${Math.random()}`,
+      10,
+    );
+
     user.resetPasswordToken = undefined;
     user.resetPasswordExpiresAt = undefined;
+
+    user.isEmailConfirmed = false;
+    user.isActive = false;
 
     await this.usersRepository.save(user);
 
@@ -179,7 +198,9 @@ export class UsersService {
 
   async findMyAddresses(userId: number): Promise<Address[]> {
     return this.addressesRepository.find({
-      where: { userId },
+      where: {
+        userId,
+      },
       order: {
         isDefault: 'DESC',
         createdAt: 'DESC',
@@ -189,7 +210,10 @@ export class UsersService {
 
   async createAddress(userId: number, dto: CreateAddressDto): Promise<Address> {
     if (dto.isDefault) {
-      await this.addressesRepository.update({ userId }, { isDefault: false });
+      await this.addressesRepository.update(
+        { userId },
+        { isDefault: false },
+      );
     }
 
     const address = this.addressesRepository.create({
@@ -217,7 +241,10 @@ export class UsersService {
     }
 
     if (dto.isDefault) {
-      await this.addressesRepository.update({ userId }, { isDefault: false });
+      await this.addressesRepository.update(
+        { userId },
+        { isDefault: false },
+      );
     }
 
     Object.assign(address, dto);

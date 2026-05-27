@@ -14,6 +14,8 @@ import { AdminModule } from './modules/admin/admin.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
 import { MailModule } from './modules/mail/mail.module';
+import { ContactModule } from './modules/contact/contact.module';
+import { ChatbotModule } from './modules/chatbot/chatbot.module';
 
 @Module({
   imports: [
@@ -45,6 +47,8 @@ import { MailModule } from './modules/mail/mail.module';
     PaymentsModule,
     InvoicesModule,
     MailModule,
+    ContactModule,
+    ChatbotModule,
   ],
   controllers: [AppController],
   providers: [AppService],
