@@ -18,45 +18,45 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @ApiTags('Users')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @Get('me')
   getMe(@CurrentUser() user: any) {
-    return user;
+    return this.usersService.findSafeById(user.id);
   }
 
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @Patch('me')
-  updateMyProfile(
-    @CurrentUser() user: any,
-    @Body() dto: UpdateProfileDto,
-  ) {
+  updateMyProfile(@CurrentUser() user: any, @Body() dto: UpdateProfileDto) {
     return this.usersService.updateMyProfile(user.id, dto);
   }
 
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @Patch('me/password')
+  changeMyPassword(@CurrentUser() user: any, @Body() dto: ChangePasswordDto) {
+    return this.usersService.changeMyPassword(user.id, dto);
+  }
+
+  @Delete('me')
+  deleteMyAccount(@CurrentUser() user: any) {
+    return this.usersService.deleteMyAccount(user.id);
+  }
+
   @Get('me/addresses')
   findMyAddresses(@CurrentUser() user: any) {
     return this.usersService.findMyAddresses(user.id);
   }
 
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @Post('me/addresses')
   createAddress(@CurrentUser() user: any, @Body() dto: CreateAddressDto) {
     return this.usersService.createAddress(user.id, dto);
   }
 
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @Patch('me/addresses/:id')
   updateAddress(
     @CurrentUser() user: any,
@@ -66,8 +66,6 @@ export class UsersController {
     return this.usersService.updateAddress(user.id, Number(id), dto);
   }
 
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @Delete('me/addresses/:id')
   removeAddress(@CurrentUser() user: any, @Param('id') id: string) {
     return this.usersService.removeAddress(user.id, Number(id));

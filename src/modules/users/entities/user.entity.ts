@@ -47,6 +47,9 @@ export class User {
   @Column({ default: false })
   isEmailConfirmed!: boolean;
 
+  @Column({ default: true })
+  isActive!: boolean;
+
   @Column({ nullable: true })
   resetPasswordToken?: string;
 

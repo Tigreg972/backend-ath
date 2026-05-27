@@ -40,8 +40,8 @@ async function bootstrap() {
 
   const config = new DocumentBuilder()
     .setTitle('Althea Systems API')
-    .setDescription('Backend compatible avec le front de Daphné')
-    .setVersion('1.0')
+    .setDescription('Backend de Althea Systems')
+    .setVersion('3.0')
     .addBearerAuth()
     .build();
 
