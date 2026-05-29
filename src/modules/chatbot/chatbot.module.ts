@@ -7,9 +7,7 @@ import { ChatbotService } from './chatbot.service';
 import { ChatbotMessage } from './entities/chatbot-message.entity';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([ChatbotMessage]),
-  ],
+  imports: [TypeOrmModule.forFeature([ChatbotMessage])],
   controllers: [ChatbotController],
   providers: [ChatbotService],
   exports: [ChatbotService],
