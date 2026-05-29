@@ -16,13 +16,9 @@ export class CatalogService {
   ) {}
 
   private formatTechSpecs(techSpecs: unknown): string {
-    if (!techSpecs) {
-      return '';
-    }
+    if (!techSpecs) return '';
 
-    if (typeof techSpecs === 'string') {
-      return techSpecs;
-    }
+    if (typeof techSpecs === 'string') return techSpecs;
 
     if (typeof techSpecs === 'object') {
       return Object.entries(techSpecs as Record<string, unknown>)
@@ -151,17 +147,34 @@ export class CatalogService {
       .where('product.isActive = :isActive', { isActive: true });
 
     if (query.search || query.q) {
-      const search = String(query.search || query.q).trim();
+      const rawSearch = String(query.search || query.q).trim();
+      const matchMode = String(query.matchMode || 'contains');
+
+      let searchValue = `%${rawSearch}%`;
+
+      if (matchMode === 'exact') {
+        searchValue = rawSearch;
+      }
+
+      if (matchMode === 'starts_with') {
+        searchValue = `${rawSearch}%`;
+      }
 
       qb.andWhere(
         new Brackets((where) => {
           where
-            .where('product.name LIKE :search', { search: `%${search}%` })
+            .where('product.name LIKE :search', { search: searchValue })
             .orWhere('product.description LIKE :search', {
-              search: `%${search}%`,
+              search: searchValue,
             })
             .orWhere('product.shortDescription LIKE :search', {
-              search: `%${search}%`,
+              search: searchValue,
+            })
+            .orWhere('product.sku LIKE :search', {
+              search: searchValue,
+            })
+            .orWhere('JSON_EXTRACT(product.techSpecs, "$") LIKE :search', {
+              search: searchValue,
             });
         }),
       );
@@ -191,20 +204,57 @@ export class CatalogService {
       });
     }
 
-    if (query.availableOnly === 'true' || query.inStock === 'true') {
+    if (
+      query.availableOnly === 'true' ||
+      query.inStock === 'true' ||
+      query.availability === 'in_stock'
+    ) {
       qb.andWhere('product.stock > 0');
     }
 
-    if (query.sort === 'price_asc' || query.sortBy === 'price_asc') {
-      qb.orderBy('product.priceCents', 'ASC');
-    } else if (query.sort === 'price_desc' || query.sortBy === 'price_desc') {
-      qb.orderBy('product.priceCents', 'DESC');
-    } else if (query.sort === 'newest') {
-      qb.orderBy('product.createdAt', 'DESC');
-    } else {
-      qb.orderBy('product.priority', 'DESC');
-      qb.addOrderBy('product.stock', 'DESC');
-      qb.addOrderBy('product.createdAt', 'DESC');
+    if (query.availability === 'out_of_stock') {
+      qb.andWhere('product.stock <= 0');
+    }
+
+    switch (query.sort || query.sortBy) {
+      case 'price_asc':
+        qb.orderBy('product.priceCents', 'ASC');
+        break;
+
+      case 'price_desc':
+        qb.orderBy('product.priceCents', 'DESC');
+        break;
+
+      case 'name_asc':
+        qb.orderBy('product.name', 'ASC');
+        break;
+
+      case 'name_desc':
+        qb.orderBy('product.name', 'DESC');
+        break;
+
+      case 'newest':
+        qb.orderBy('product.createdAt', 'DESC');
+        break;
+
+      case 'oldest':
+        qb.orderBy('product.createdAt', 'ASC');
+        break;
+
+      case 'stock_desc':
+        qb.orderBy('product.stock', 'DESC');
+        break;
+
+      case 'stock_asc':
+        qb.orderBy('product.stock', 'ASC');
+        break;
+
+      case 'priority':
+      default:
+        qb.orderBy('product.priority', 'DESC');
+        qb.addOrderBy('product.stock', 'DESC');
+        qb.addOrderBy('product.createdAt', 'DESC');
+        break;
     }
 
     qb.skip(skip).take(limit);
@@ -221,6 +271,7 @@ export class CatalogService {
       },
       total,
       page,
+      pageSize: limit,
       limit,
       totalPages: Math.ceil(total / limit),
     };
@@ -235,6 +286,9 @@ export class CatalogService {
       throw new NotFoundException('Produit introuvable');
     }
 
-    return this.mapProduct(product);
+    return this.mapProduct(
+      
+      
+      product);
   }
 }
