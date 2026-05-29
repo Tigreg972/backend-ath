@@ -100,4 +100,50 @@ export class MailService {
         : undefined,
     );
   }
+
+  async sendContactConfirmationEmail(
+  to: string,
+  firstName: string,
+  subject: string,
+) {
+  await this.sendMail(
+    to,
+    'Confirmation de réception de votre message',
+    `
+      <h1>Bonjour ${firstName},</h1>
+
+      <p>Votre message a bien été transmis à notre équipe.</p>
+      <p>Nous vous répondrons dès que possible.</p>
+
+      <p><strong>Sujet :</strong> ${subject}</p>
+
+      <p>Cordialement,<br/>
+      L’équipe Althea Shop</p>
+    `,
+  );
+}
+async sendContactReplyEmail(
+  to: string,
+  firstName: string,
+  subject: string,
+  reply: string,
+) {
+  await this.sendMail(
+    to,
+    `Réponse à votre message : ${subject}`,
+    `
+      <h1>Bonjour ${firstName},</h1>
+
+      <p>Nous revenons vers vous concernant votre message :</p>
+      <p><strong>${subject}</strong></p>
+
+      <div style="padding: 12px; border-left: 4px solid #0B3C5D; background: #f5f7fa;">
+        ${reply}
+      </div>
+
+      <p>Cordialement,<br/>
+      L’équipe Althea Shop</p>
+    `,
+  );
+}
 }

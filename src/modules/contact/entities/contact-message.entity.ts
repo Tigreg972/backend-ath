@@ -5,6 +5,11 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
+export enum ContactStatus {
+  PENDING = 'pending',
+  ANSWERED = 'answered',
+}
+
 @Entity('contact_messages')
 export class ContactMessage {
   @PrimaryGeneratedColumn()
@@ -26,6 +31,25 @@ export class ContactMessage {
     type: 'text',
   })
   message!: string;
+
+  @Column({
+    type: 'enum',
+    enum: ContactStatus,
+    default: ContactStatus.PENDING,
+  })
+  status!: ContactStatus;
+
+  @Column({
+    type: 'text',
+    nullable: true,
+  })
+  replyMessage?: string;
+
+  @Column({
+    type: 'datetime',
+    nullable: true,
+  })
+  repliedAt?: Date;
 
   @CreateDateColumn()
   createdAt!: Date;

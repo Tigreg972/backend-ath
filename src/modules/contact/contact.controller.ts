@@ -10,7 +10,9 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 
 import { ContactService } from './contact.service';
+
 import { CreateContactMessageDto } from './dto/create-contact-message.dto';
+import { ReplyContactMessageDto } from './dto/reply-contact-message.dto';
 
 @ApiTags('Contact')
 @Controller('contact')
@@ -27,6 +29,14 @@ export class ContactController {
   @Get()
   findAll() {
     return this.contactService.findAll();
+  }
+
+  @Post(':id/reply')
+  reply(
+    @Param('id') id: string,
+    @Body() dto: ReplyContactMessageDto,
+  ) {
+    return this.contactService.reply(Number(id), dto);
   }
 
   @Delete(':id')
