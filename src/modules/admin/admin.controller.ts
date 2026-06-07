@@ -30,13 +30,21 @@ import { imageUploadOptions } from '../../common/uploads/image-upload.config';
 import { CreateAdminProductDto } from './dto/create-admin-product.dto';
 import { UpdateAdminProductDto } from './dto/update-admin-product.dto';
 
+import { CreateAdminCategoryDto } from './dto/create-admin-category.dto';
+import { UpdateAdminCategoryDto } from './dto/update-admin-category.dto';
+
+import { HomeService } from '../home/home.service';
+import { CreateHomeSlideDto } from '../home/dto/create-home-slide.dto';
+import { UpdateHomeSlideDto } from '../home/dto/update-home-slide.dto';
+import { UpdateHomeContentDto } from '../home/dto/update-home-content.dto';
+
 @ApiTags('Admin')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(private readonly adminService: AdminService, private readonly homeService: HomeService) {}
 
   @Get('stats')
   getStats() {
@@ -98,4 +106,60 @@ export class AdminController {
   findCategories() {
     return this.adminService.findCategories();
   }
+
+  @Post('categories')
+createCategory(@Body() dto: CreateAdminCategoryDto) {
+  return this.adminService.createCategory(dto);
+}
+
+@Patch('categories/:id')
+updateCategory(
+  @Param('id') id: string,
+  @Body() dto: UpdateAdminCategoryDto,
+) {
+  return this.adminService.updateCategory(Number(id), dto);
+}
+
+@Delete('categories/:id')
+deleteCategory(@Param('id') id: string) {
+  return this.adminService.deleteCategory(Number(id));
+}
+
+
+@Get('home')
+async getHomeAdmin() {
+  const content = await this.homeService.getHomeContent();
+
+  return {
+    homeText: content.homeText,
+  };
+}
+
+@Patch('home')
+updateHomeContent(@Body() dto: UpdateHomeContentDto) {
+  return this.homeService.updateHomeContent(dto);
+}
+
+@Get('slides')
+getSlides() {
+  return this.homeService.getAdminSlides();
+}
+
+@Post('slides')
+createSlide(@Body() dto: CreateHomeSlideDto) {
+  return this.homeService.createSlide(dto);
+}
+
+@Patch('slides/:id')
+updateSlide(
+  @Param('id') id: string,
+  @Body() dto: UpdateHomeSlideDto,
+) {
+  return this.homeService.updateSlide(Number(id), dto);
+}
+
+@Delete('slides/:id')
+deleteSlide(@Param('id') id: string) {
+  return this.homeService.deleteSlide(Number(id));
+}
 }

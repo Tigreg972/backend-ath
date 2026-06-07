@@ -56,21 +56,18 @@ export class ChatbotService {
         max_tokens: 250,
       });
 
-      return (
-        response.choices[0]?.message?.content ||
-        this.getFallbackReply()
-      );
+      return response.choices[0]?.message?.content || this.getFallbackReply();
     } catch (error) {
       console.error('Erreur Groq chatbot:', error);
-
       return this.getFallbackReply();
     }
   }
 
-  async create(dto: CreateChatbotMessageDto) {
+  async create(userId: number, dto: CreateChatbotMessageDto) {
     const reply = await this.generateAiReply(dto.message);
 
     const message = this.chatbotRepository.create({
+      userId,
       message: dto.message,
       reply,
     });
@@ -82,7 +79,18 @@ export class ChatbotService {
     };
   }
 
-  async findAll() {
+  async findMyMessages(userId: number) {
+    return this.chatbotRepository.find({
+      where: {
+        userId,
+      },
+      order: {
+        createdAt: 'ASC',
+      },
+    });
+  }
+
+  async findAllForAdmin() {
     return this.chatbotRepository.find({
       order: {
         createdAt: 'DESC',

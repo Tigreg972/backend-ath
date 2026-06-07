@@ -12,6 +12,9 @@ import { User } from '../users/entities/user.entity';
 import { CreateAdminProductDto } from './dto/create-admin-product.dto';
 import { UpdateAdminProductDto } from './dto/update-admin-product.dto';
 
+import { CreateAdminCategoryDto } from './dto/create-admin-category.dto';
+import { UpdateAdminCategoryDto } from './dto/update-admin-category.dto';
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -436,4 +439,54 @@ export class AdminService {
       },
     });
   }
+
+  async createCategory(dto: CreateAdminCategoryDto) {
+  const category = this.categoriesRepository.create({
+    name: dto.name,
+    slug: dto.slug,
+    description: dto.description || '',
+    imageUrl: dto.imageUrl || '',
+    displayOrder: dto.displayOrder || 0,
+    isActive: dto.isActive ?? true,
+  });
+
+  return this.categoriesRepository.save(category);
+}
+
+async updateCategory(id: number, dto: UpdateAdminCategoryDto) {
+  const category = await this.categoriesRepository.findOne({
+    where: { id },
+  });
+
+  if (!category) {
+    throw new NotFoundException('Catégorie introuvable');
+  }
+
+  Object.assign(category, {
+    name: dto.name ?? category.name,
+    slug: dto.slug ?? category.slug,
+    description: dto.description ?? category.description,
+    imageUrl: dto.imageUrl ?? category.imageUrl,
+    displayOrder: dto.displayOrder ?? category.displayOrder,
+    isActive: dto.isActive ?? category.isActive,
+  });
+
+  return this.categoriesRepository.save(category);
+}
+
+async deleteCategory(id: number) {
+  const category = await this.categoriesRepository.findOne({
+    where: { id },
+  });
+
+  if (!category) {
+    throw new NotFoundException('Catégorie introuvable');
+  }
+
+  await this.categoriesRepository.delete(id);
+
+  return {
+    message: 'Catégorie supprimée avec succès',
+  };
+}
 }

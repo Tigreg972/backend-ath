@@ -16,6 +16,7 @@ import { InvoicesModule } from './modules/invoices/invoices.module';
 import { MailModule } from './modules/mail/mail.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { ChatbotModule } from './modules/chatbot/chatbot.module';
+import { HomeModule } from './modules/home/home.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { ChatbotModule } from './modules/chatbot/chatbot.module';
     MailModule,
     ContactModule,
     ChatbotModule,
+    HomeModule,
   ],
   controllers: [AppController],
   providers: [AppService],

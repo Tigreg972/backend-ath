@@ -9,6 +9,7 @@ import { ProductImage } from '../catalog/entities/product-image.entity';
 import { Category } from '../catalog/entities/category.entity';
 import { Order } from '../orders/entities/order.entity';
 import { User } from '../users/entities/user.entity';
+import { HomeModule } from '../home/home.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { User } from '../users/entities/user.entity';
       Order,
       User,
     ]),
+    HomeModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],
