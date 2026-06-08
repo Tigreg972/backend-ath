@@ -38,13 +38,16 @@ import { CreateHomeSlideDto } from '../home/dto/create-home-slide.dto';
 import { UpdateHomeSlideDto } from '../home/dto/update-home-slide.dto';
 import { UpdateHomeContentDto } from '../home/dto/update-home-content.dto';
 
+import { UpdateAdminOrderStatusDto } from './dto/update-admin-order-status.dto';
+import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
+
 @ApiTags('Admin')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService, private readonly homeService: HomeService) {}
+  constructor(private readonly adminService: AdminService, private readonly homeService: HomeService) { }
 
   @Get('stats')
   getStats() {
@@ -108,58 +111,99 @@ export class AdminController {
   }
 
   @Post('categories')
-createCategory(@Body() dto: CreateAdminCategoryDto) {
-  return this.adminService.createCategory(dto);
-}
+  createCategory(@Body() dto: CreateAdminCategoryDto) {
+    return this.adminService.createCategory(dto);
+  }
 
-@Patch('categories/:id')
-updateCategory(
-  @Param('id') id: string,
-  @Body() dto: UpdateAdminCategoryDto,
-) {
-  return this.adminService.updateCategory(Number(id), dto);
-}
+  @Patch('categories/:id')
+  updateCategory(
+    @Param('id') id: string,
+    @Body() dto: UpdateAdminCategoryDto,
+  ) {
+    return this.adminService.updateCategory(Number(id), dto);
+  }
 
-@Delete('categories/:id')
-deleteCategory(@Param('id') id: string) {
-  return this.adminService.deleteCategory(Number(id));
-}
+  @Delete('categories/:id')
+  deleteCategory(@Param('id') id: string) {
+    return this.adminService.deleteCategory(Number(id));
+  }
 
 
-@Get('home')
-async getHomeAdmin() {
-  const content = await this.homeService.getHomeContent();
+  @Get('home')
+  async getHomeAdmin() {
+    const content = await this.homeService.getHomeContent();
 
-  return {
-    homeText: content.homeText,
-  };
-}
+    return {
+      homeText: content.homeText,
+    };
+  }
 
-@Patch('home')
-updateHomeContent(@Body() dto: UpdateHomeContentDto) {
-  return this.homeService.updateHomeContent(dto);
-}
+  @Patch('home')
+  updateHomeContent(@Body() dto: UpdateHomeContentDto) {
+    return this.homeService.updateHomeContent(dto);
+  }
 
-@Get('slides')
-getSlides() {
-  return this.homeService.getAdminSlides();
-}
+  @Get('slides')
+  getSlides() {
+    return this.homeService.getAdminSlides();
+  }
 
-@Post('slides')
-createSlide(@Body() dto: CreateHomeSlideDto) {
-  return this.homeService.createSlide(dto);
-}
+  @Post('slides')
+  createSlide(@Body() dto: CreateHomeSlideDto) {
+    return this.homeService.createSlide(dto);
+  }
 
-@Patch('slides/:id')
-updateSlide(
-  @Param('id') id: string,
-  @Body() dto: UpdateHomeSlideDto,
-) {
-  return this.homeService.updateSlide(Number(id), dto);
-}
+  @Patch('slides/:id')
+  updateSlide(
+    @Param('id') id: string,
+    @Body() dto: UpdateHomeSlideDto,
+  ) {
+    return this.homeService.updateSlide(Number(id), dto);
+  }
 
-@Delete('slides/:id')
-deleteSlide(@Param('id') id: string) {
-  return this.homeService.deleteSlide(Number(id));
-}
+  @Delete('slides/:id')
+  deleteSlide(@Param('id') id: string) {
+    return this.homeService.deleteSlide(Number(id));
+  }
+
+  @Get('orders')
+  findAllOrdersAdmin() {
+    return this.adminService.findAllOrdersAdmin();
+  }
+
+  @Get('orders/:id')
+  findOrderByIdAdmin(@Param('id') id: string) {
+    return this.adminService.findOrderByIdAdmin(Number(id));
+  }
+
+  @Patch('orders/:id/status')
+  updateOrderStatusAdmin(
+    @Param('id') id: string,
+    @Body() dto: UpdateAdminOrderStatusDto,
+  ) {
+    return this.adminService.updateOrderStatusAdmin(Number(id), dto);
+  }
+
+  @Get('users')
+  findAllUsersAdmin() {
+    return this.adminService.findAllUsersAdmin();
+  }
+
+  @Get('users/:id')
+  findUserByIdAdmin(@Param('id') id: string) {
+    return this.adminService.findUserByIdAdmin(Number(id));
+  }
+
+  @Patch('users/:id')
+  updateUserAdmin(
+    @Param('id') id: string,
+    @Body() dto: UpdateAdminUserDto,
+  ) {
+    return this.adminService.updateUserAdmin(Number(id), dto);
+  }
+
+  @Delete('users/:id')
+  deleteUserAdmin(@Param('id') id: string) {
+    return this.adminService.deleteUserAdmin(Number(id));
+  }
 }
