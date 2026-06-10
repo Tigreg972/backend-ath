@@ -7,7 +7,10 @@ import { Repository } from 'typeorm';
 import OpenAI from 'openai';
 
 import { ChatbotMessage } from './entities/chatbot-message.entity';
-import { CreateChatbotMessageDto } from './dto/create-chatbot-message.dto';
+import {
+  ChatbotLanguage,
+  CreateChatbotMessageDto,
+} from './dto/create-chatbot-message.dto';
 
 @Injectable()
 export class ChatbotService {
@@ -29,13 +32,165 @@ export class ChatbotService {
     }
   }
 
-  private getFallbackReply(): string {
-    return 'Désolé, l’assistant est momentanément indisponible. Vous pouvez contacter notre équipe via le formulaire de contact.';
+  private normalizeLanguage(language?: string): ChatbotLanguage {
+    const shortLanguage = language?.split('-')[0];
+
+    if (
+      shortLanguage === 'fr' ||
+      shortLanguage === 'en' ||
+      shortLanguage === 'ar' ||
+      shortLanguage === 'he'
+    ) {
+      return shortLanguage;
+    }
+
+    return 'fr';
   }
 
-  private async generateAiReply(message: string): Promise<string> {
+  private detectLanguageFromMessage(message: string): ChatbotLanguage | null {
+    const text = message.trim();
+
+    if (!text) {
+      return null;
+    }
+
+    if (/[\u0600-\u06FF]/.test(text)) {
+      return 'ar';
+    }
+
+    if (/[\u0590-\u05FF]/.test(text)) {
+      return 'he';
+    }
+
+    const lowerText = text.toLowerCase();
+
+    const englishWords = [
+      'hello',
+      'hi',
+      'where',
+      'order',
+      'payment',
+      'invoice',
+      'delivery',
+      'account',
+      'product',
+      'price',
+      'stock',
+      'help',
+      'thanks',
+      'thank you',
+    ];
+
+    const frenchWords = [
+      'bonjour',
+      'salut',
+      'commande',
+      'paiement',
+      'facture',
+      'livraison',
+      'compte',
+      'produit',
+      'prix',
+      'stock',
+      'aide',
+      'merci',
+      'où',
+      'est',
+      'ma',
+      'mon',
+    ];
+
+    const englishScore = englishWords.filter((word) =>
+      lowerText.includes(word),
+    ).length;
+
+    const frenchScore = frenchWords.filter((word) =>
+      lowerText.includes(word),
+    ).length;
+
+    if (englishScore > frenchScore) {
+      return 'en';
+    }
+
+    if (frenchScore > englishScore) {
+      return 'fr';
+    }
+
+    return null;
+  }
+
+  private resolveReplyLanguage(
+    siteLanguage?: string,
+    message?: string,
+  ): ChatbotLanguage {
+    const normalizedSiteLanguage = this.normalizeLanguage(siteLanguage);
+    const detectedMessageLanguage = message
+      ? this.detectLanguageFromMessage(message)
+      : null;
+
+    return detectedMessageLanguage || normalizedSiteLanguage || 'fr';
+  }
+
+  private getLanguageLabel(language: ChatbotLanguage): string {
+    const labels: Record<ChatbotLanguage, string> = {
+      fr: 'French',
+      en: 'English',
+      ar: 'Arabic',
+      he: 'Hebrew',
+    };
+
+    return labels[language];
+  }
+
+  private getFallbackReply(language: ChatbotLanguage): string {
+    const replies: Record<ChatbotLanguage, string> = {
+      fr: 'Désolé, l’assistant est momentanément indisponible. Vous pouvez contacter notre équipe via le formulaire de contact.',
+      en: 'Sorry, the assistant is temporarily unavailable. You can contact our team using the contact form.',
+      ar: 'عذرًا، المساعد غير متاح مؤقتًا. يمكنك التواصل مع فريقنا عبر نموذج الاتصال.',
+      he: 'מצטערים, העוזר אינו זמין כרגע. ניתן ליצור קשר עם הצוות שלנו דרך טופס יצירת הקשר.',
+    };
+
+    return replies[language];
+  }
+
+  private buildSystemPrompt(language: ChatbotLanguage): string {
+    const languageLabel = this.getLanguageLabel(language);
+
+    return `
+You are the Althea Shop assistant, an e-commerce assistant specialized in medical equipment.
+
+You must always answer in ${languageLabel}.
+Never answer in another language.
+
+Supported languages:
+- fr = French
+- en = English
+- ar = Arabic
+- he = Hebrew
+
+Your role:
+- Help users with products, orders, delivery, payment, invoices, account management and support.
+- Give short, clear, professional and reassuring answers.
+- Adapt the tone to an e-commerce medical equipment platform.
+
+Important rules:
+- Never invent an order number.
+- Never invent a price.
+- Never invent stock availability.
+- Never invent delivery dates.
+- Never invent personal information.
+- If you do not have the information, invite the user to contact the team through the contact form.
+- Do not ask for sensitive banking data.
+- Do not ask for a full card number or CVV.
+`.trim();
+  }
+
+  private async generateAiReply(
+    message: string,
+    language: ChatbotLanguage,
+  ): Promise<string> {
     if (!this.groq) {
-      return this.getFallbackReply();
+      return this.getFallbackReply(language);
     }
 
     try {
@@ -44,8 +199,7 @@ export class ChatbotService {
         messages: [
           {
             role: 'system',
-            content:
-              "Tu es l'assistant du site e-commerce Althea Shop, spécialisé dans la vente de matériel médical. Tu aides les clients sur les produits, les commandes, la livraison, le paiement, les factures, le compte utilisateur et le support. Tu réponds toujours en français, de manière claire, courte, professionnelle et rassurante. Tu ne dois jamais inventer de numéro de commande, de prix, de stock, de délai précis ou d'information personnelle. Si tu n'as pas l'information, tu invites le client à contacter l'équipe via le formulaire de contact.",
+            content: this.buildSystemPrompt(language),
           },
           {
             role: 'user',
@@ -56,15 +210,19 @@ export class ChatbotService {
         max_tokens: 250,
       });
 
-      return response.choices[0]?.message?.content || this.getFallbackReply();
+      return (
+        response.choices[0]?.message?.content ||
+        this.getFallbackReply(language)
+      );
     } catch (error) {
       console.error('Erreur Groq chatbot:', error);
-      return this.getFallbackReply();
+      return this.getFallbackReply(language);
     }
   }
 
   async create(userId: number, dto: CreateChatbotMessageDto) {
-    const reply = await this.generateAiReply(dto.message);
+    const language = this.resolveReplyLanguage(dto.language, dto.message);
+    const reply = await this.generateAiReply(dto.message, language);
 
     const message = this.chatbotRepository.create({
       userId,
@@ -76,6 +234,7 @@ export class ChatbotService {
 
     return {
       reply,
+      language,
     };
   }
 
