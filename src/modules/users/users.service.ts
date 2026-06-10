@@ -12,11 +12,14 @@ import * as bcrypt from 'bcrypt';
 
 import { User } from './entities/user.entity';
 import { Address } from './entities/address.entity';
+import { PaymentMethod } from './entities/payment-method.entity';
 
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
+import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
 
 @Injectable()
 export class UsersService {
@@ -26,6 +29,9 @@ export class UsersService {
 
     @InjectRepository(Address)
     private readonly addressesRepository: Repository<Address>,
+
+    @InjectRepository(PaymentMethod)
+    private readonly paymentMethodsRepository: Repository<PaymentMethod>,
   ) {}
 
   private sanitizeUser(user: User) {
@@ -37,6 +43,34 @@ export class UsersService {
     } = user;
 
     return safeUser;
+  }
+
+  private validateExpiry(expiry: string) {
+    const [monthValue, yearValue] = expiry.split('/');
+    const month = Number(monthValue);
+    const year = Number(`20${yearValue}`);
+
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+
+    if (
+      year < currentYear ||
+      (year === currentYear && month < currentMonth)
+    ) {
+      throw new BadRequestException('La carte est expirée');
+    }
+  }
+
+  private formatPaymentMethod(paymentMethod: PaymentMethod) {
+    return {
+      id: paymentMethod.id,
+      cardName: paymentMethod.cardName,
+      last4: paymentMethod.last4,
+      expiry: paymentMethod.expiry,
+      brand: paymentMethod.brand,
+      isDefault: paymentMethod.isDefault,
+    };
   }
 
   async save(user: User): Promise<User> {
@@ -269,5 +303,165 @@ export class UsersService {
     return {
       message: 'Adresse supprimée avec succès',
     };
+  }
+
+  async findMyPaymentMethods(userId: number) {
+    const methods = await this.paymentMethodsRepository.find({
+      where: { userId },
+      order: {
+        isDefault: 'DESC',
+        createdAt: 'DESC',
+      },
+    });
+
+    return methods.map((method) => this.formatPaymentMethod(method));
+  }
+
+  async createPaymentMethod(userId: number, dto: CreatePaymentMethodDto) {
+    this.validateExpiry(dto.expiry);
+
+    const cleanCardNumber = String(dto.cardNumber).replace(/\D/g, '');
+
+    if (cleanCardNumber.length < 12 || cleanCardNumber.length > 19) {
+      throw new BadRequestException('Numéro de carte invalide');
+    }
+
+    const methodsCount = await this.paymentMethodsRepository.count({
+      where: { userId },
+    });
+
+    const shouldBeDefault = Boolean(dto.isDefault) || methodsCount === 0;
+
+    if (shouldBeDefault) {
+      await this.paymentMethodsRepository.update(
+        { userId },
+        { isDefault: false },
+      );
+    }
+
+    const method = this.paymentMethodsRepository.create({
+      userId,
+      cardName: dto.cardName,
+      last4: cleanCardNumber.slice(-4),
+      expiry: dto.expiry,
+      brand: dto.brand || 'cb',
+      isDefault: shouldBeDefault,
+    });
+
+    const savedMethod = await this.paymentMethodsRepository.save(method);
+
+    return this.formatPaymentMethod(savedMethod);
+  }
+
+  async updatePaymentMethod(
+    userId: number,
+    paymentMethodId: number,
+    dto: UpdatePaymentMethodDto,
+  ) {
+    const method = await this.paymentMethodsRepository.findOne({
+      where: {
+        id: paymentMethodId,
+        userId,
+      },
+    });
+
+    if (!method) {
+      throw new NotFoundException('Moyen de paiement introuvable');
+    }
+
+    if (dto.expiry !== undefined) {
+      this.validateExpiry(dto.expiry);
+      method.expiry = dto.expiry;
+    }
+
+    if (dto.cardNumber !== undefined) {
+      const cleanCardNumber = String(dto.cardNumber).replace(/\D/g, '');
+
+      if (cleanCardNumber.length < 12 || cleanCardNumber.length > 19) {
+        throw new BadRequestException('Numéro de carte invalide');
+      }
+
+      method.last4 = cleanCardNumber.slice(-4);
+    }
+
+    if (dto.cardName !== undefined) {
+      method.cardName = dto.cardName;
+    }
+
+    if (dto.brand !== undefined) {
+      method.brand = dto.brand;
+    }
+
+    if (dto.isDefault) {
+      await this.paymentMethodsRepository.update(
+        { userId },
+        { isDefault: false },
+      );
+
+      method.isDefault = true;
+    } else if (dto.isDefault !== undefined) {
+      method.isDefault = dto.isDefault;
+    }
+
+    const savedMethod = await this.paymentMethodsRepository.save(method);
+
+    return this.formatPaymentMethod(savedMethod);
+  }
+
+  async removePaymentMethod(userId: number, paymentMethodId: number) {
+    const method = await this.paymentMethodsRepository.findOne({
+      where: {
+        id: paymentMethodId,
+        userId,
+      },
+    });
+
+    if (!method) {
+      throw new NotFoundException('Moyen de paiement introuvable');
+    }
+
+    const wasDefault = method.isDefault;
+
+    await this.paymentMethodsRepository.remove(method);
+
+    if (wasDefault) {
+      const nextMethod = await this.paymentMethodsRepository.findOne({
+        where: { userId },
+        order: { createdAt: 'DESC' },
+      });
+
+      if (nextMethod) {
+        nextMethod.isDefault = true;
+        await this.paymentMethodsRepository.save(nextMethod);
+      }
+    }
+
+    return {
+      message: 'Moyen de paiement supprimé avec succès',
+    };
+  }
+
+  async setDefaultPaymentMethod(userId: number, paymentMethodId: number) {
+    const method = await this.paymentMethodsRepository.findOne({
+      where: {
+        id: paymentMethodId,
+        userId,
+      },
+    });
+
+    if (!method) {
+      throw new NotFoundException('Moyen de paiement introuvable');
+    }
+
+    await this.paymentMethodsRepository.update(
+      { userId },
+      { isDefault: false },
+    );
+
+    method.isDefault = true;
+
+    const savedMethod = await this.paymentMethodsRepository.save(method);
+
+    return this.formatPaymentMethod(savedMethod);
   }
 }

@@ -19,6 +19,8 @@ import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
+import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
 
 @ApiTags('Users')
 @ApiBearerAuth()
@@ -69,5 +71,37 @@ export class UsersController {
   @Delete('me/addresses/:id')
   removeAddress(@CurrentUser() user: any, @Param('id') id: string) {
     return this.usersService.removeAddress(user.id, Number(id));
+  }
+
+  @Get('me/payment-methods')
+  findMyPaymentMethods(@CurrentUser() user: any) {
+    return this.usersService.findMyPaymentMethods(user.id);
+  }
+
+  @Post('me/payment-methods')
+  createPaymentMethod(
+    @CurrentUser() user: any,
+    @Body() dto: CreatePaymentMethodDto,
+  ) {
+    return this.usersService.createPaymentMethod(user.id, dto);
+  }
+
+  @Patch('me/payment-methods/:id')
+  updatePaymentMethod(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: UpdatePaymentMethodDto,
+  ) {
+    return this.usersService.updatePaymentMethod(user.id, Number(id), dto);
+  }
+
+  @Delete('me/payment-methods/:id')
+  removePaymentMethod(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.usersService.removePaymentMethod(user.id, Number(id));
+  }
+
+  @Patch('me/payment-methods/:id/default')
+  setDefaultPaymentMethod(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.usersService.setDefaultPaymentMethod(user.id, Number(id));
   }
 }

@@ -8,7 +8,7 @@ import {
 } from 'typeorm';
 
 import { Address } from './address.entity';
-import { PaymentMethod } from '../../payment-methods/entities/payment-method.entity';
+import { PaymentMethod } from './payment-method.entity';
 
 export enum UserRole {
   USER = 'user',
