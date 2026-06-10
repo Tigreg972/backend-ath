@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 
 import { Address } from './address.entity';
+import { PaymentMethod } from '../../payment-methods/entities/payment-method.entity';
 
 export enum UserRole {
   USER = 'user',
@@ -58,6 +59,9 @@ export class User {
 
   @OneToMany(() => Address, (address) => address.user)
   addresses!: Address[];
+
+  @OneToMany(() => PaymentMethod, (paymentMethod) => paymentMethod.user)
+  paymentMethods!: PaymentMethod[];
 
   @CreateDateColumn()
   createdAt!: Date;

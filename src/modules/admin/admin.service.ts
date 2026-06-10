@@ -64,6 +64,33 @@ export class AdminService {
     return safeUser;
   }
 
+  private getStatsPeriod(period?: string) {
+    const normalizedPeriod = period === '5w' ? '5w' : '7d';
+    const now = new Date();
+
+    if (normalizedPeriod === '5w') {
+      const startDate = new Date(now);
+      startDate.setHours(0, 0, 0, 0);
+      startDate.setDate(startDate.getDate() - 28);
+
+      return {
+        startDate,
+        groupFormat: '%x-%v',
+        labelFormat: "CONCAT('S', DATE_FORMAT(order.createdAt, '%v'))",
+      };
+    }
+
+    const startDate = new Date(now);
+    startDate.setHours(0, 0, 0, 0);
+    startDate.setDate(startDate.getDate() - 6);
+
+    return {
+      startDate,
+      groupFormat: '%Y-%m-%d',
+      labelFormat: "DATE_FORMAT(order.createdAt, '%d/%m')",
+    };
+  }
+
   private async mapProduct(product: Product) {
     const category = product.categoryId
       ? await this.categoriesRepository.findOne({
@@ -73,7 +100,7 @@ export class AdminService {
 
     const images = await this.imagesRepository.find({
       where: { productId: product.id },
-      order: { displayOrder: 'ASC' },
+      order: { displayOrder: 'ASC', id: 'ASC' },
     });
 
     return {
@@ -101,7 +128,8 @@ export class AdminService {
       images: images.map((image) => ({
         id: image.id,
         url: image.url,
-        alt: image.altText,
+        alt: image.altText || product.name,
+        altText: image.altText || product.name,
         displayOrder: image.displayOrder,
       })),
     };
@@ -159,7 +187,7 @@ export class AdminService {
       const images = product
         ? await this.imagesRepository.find({
             where: { productId: product.id },
-            order: { displayOrder: 'ASC' },
+            order: { displayOrder: 'ASC', id: 'ASC' },
           })
         : [];
 
@@ -180,6 +208,7 @@ export class AdminService {
       status: order.status,
       createdAt: order.createdAt,
       totalPriceCents: order.totalCents,
+      totalCents: order.totalCents,
       paymentMethod: order.paymentMethod,
       user: user
         ? {
@@ -198,7 +227,9 @@ export class AdminService {
     };
   }
 
-  async getStats() {
+  async getStats(period?: string) {
+    const statsPeriod = this.getStatsPeriod(period);
+
     const productsCount = await this.productsRepository.count();
     const usersCount = await this.usersRepository.count();
     const ordersCount = await this.ordersRepository.count();
@@ -210,9 +241,17 @@ export class AdminService {
 
     const salesByDayRaw = await this.ordersRepository
       .createQueryBuilder('order')
-      .select("DATE_FORMAT(order.createdAt, '%a')", 'label')
+      .select(
+        `DATE_FORMAT(order.createdAt, '${statsPeriod.groupFormat}')`,
+        'periodKey',
+      )
+      .addSelect(statsPeriod.labelFormat, 'label')
       .addSelect('SUM(order.totalCents)', 'totalCents')
-      .groupBy("DATE_FORMAT(order.createdAt, '%a')")
+      .where('order.createdAt >= :startDate', {
+        startDate: statsPeriod.startDate,
+      })
+      .groupBy('periodKey')
+      .addGroupBy('label')
       .orderBy('MIN(order.createdAt)', 'ASC')
       .getRawMany();
 
@@ -223,6 +262,10 @@ export class AdminService {
       .leftJoin(Category, 'category', 'category.id = product.categoryId')
       .select('category.name', 'label')
       .addSelect('SUM(item.totalCents)', 'totalCents')
+      .addSelect('COUNT(DISTINCT order.id)', 'ordersCount')
+      .where('order.createdAt >= :startDate', {
+        startDate: statsPeriod.startDate,
+      })
       .groupBy('category.name')
       .getRawMany();
 
@@ -238,6 +281,7 @@ export class AdminService {
       salesByCategory: salesByCategoryRaw.map((row) => ({
         label: row.label || 'Sans catégorie',
         totalCents: Number(row.totalCents || 0),
+        ordersCount: Number(row.ordersCount || 0),
       })),
     };
   }
@@ -378,6 +422,78 @@ export class AdminService {
     return this.findProductById(productId);
   }
 
+  async getProductImages(productId: number) {
+    const product = await this.productsRepository.findOne({
+      where: { id: productId },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Produit introuvable');
+    }
+
+    const images = await this.imagesRepository.find({
+      where: { productId },
+      order: { displayOrder: 'ASC', id: 'ASC' },
+    });
+
+    return images.map((image) => ({
+      id: image.id,
+      url: image.url,
+      alt: image.altText || product.name,
+      altText: image.altText || product.name,
+      displayOrder: image.displayOrder,
+    }));
+  }
+
+  async updateProductImage(
+    productId: number,
+    imageId: number,
+    dto: {
+      url?: string;
+      alt?: string;
+      altText?: string;
+      displayOrder?: number;
+    },
+  ) {
+    const image = await this.imagesRepository.findOne({
+      where: { id: imageId, productId },
+    });
+
+    if (!image) {
+      throw new NotFoundException('Image produit introuvable');
+    }
+
+    if (dto.url !== undefined) {
+      image.url = dto.url;
+    }
+
+    if (dto.alt !== undefined || dto.altText !== undefined) {
+      image.altText = dto.alt ?? dto.altText;
+    }
+
+    if (dto.displayOrder !== undefined) {
+      image.displayOrder = Number(dto.displayOrder);
+    }
+
+    await this.imagesRepository.save(image);
+
+    return this.findProductById(productId);
+  }
+
+  async deleteProductImage(productId: number, imageId: number) {
+    const image = await this.imagesRepository.findOne({
+      where: { id: imageId, productId },
+    });
+
+    if (!image) {
+      throw new NotFoundException('Image produit introuvable');
+    }
+
+    await this.imagesRepository.delete(image.id);
+
+    return this.findProductById(productId);
+  }
+
   async deleteProduct(id: number) {
     const product = await this.productsRepository.findOne({
       where: { id },
@@ -430,6 +546,20 @@ export class AdminService {
       displayOrder: dto.displayOrder ?? category.displayOrder,
       isActive: dto.isActive ?? category.isActive,
     });
+
+    return this.categoriesRepository.save(category);
+  }
+
+  async uploadCategoryImage(categoryId: number, imageUrl: string) {
+    const category = await this.categoriesRepository.findOne({
+      where: { id: categoryId },
+    });
+
+    if (!category) {
+      throw new NotFoundException('Catégorie introuvable');
+    }
+
+    category.imageUrl = imageUrl;
 
     return this.categoriesRepository.save(category);
   }
