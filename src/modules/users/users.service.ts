@@ -464,4 +464,12 @@ export class UsersService {
 
     return this.formatPaymentMethod(savedMethod);
   }
+  
+  async findByEmailVerificationToken(token: string) {
+  return this.usersRepository.findOne({
+    where: {
+      emailVerificationToken: token,
+    },
+  });
+}
 }

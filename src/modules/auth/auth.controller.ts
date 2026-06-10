@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Param,
   UseGuards,
 } from '@nestjs/common';
 
@@ -41,6 +42,11 @@ export class AuthController {
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
+  }
+
+  @Get('verify-email/:token')
+  verifyEmail(@Param('token') token: string) {
+    return this.authService.verifyEmail(token);
   }
 
   @ApiBearerAuth()

@@ -146,4 +146,33 @@ async sendContactReplyEmail(
     `,
   );
 }
+async sendEmailVerificationEmail(
+  to: string,
+  fullName: string,
+  verificationUrl: string,
+) {
+  await this.sendMail(
+    to,
+    'Confirmez votre adresse email',
+    `
+      <h1>Bienvenue ${fullName}</h1>
+
+      <p>Merci pour votre inscription sur Althea Shop.</p>
+
+      <p>Veuillez confirmer votre adresse email en cliquant sur le lien ci-dessous :</p>
+
+      <p>
+        <a href="${verificationUrl}">
+          Confirmer mon adresse email
+        </a>
+      </p>
+
+      <p>Ou copiez ce lien dans votre navigateur :</p>
+
+      <p>${verificationUrl}</p>
+
+      <p>Ce lien expirera dans 24 heures.</p>
+    `,
+  );
+}
 }

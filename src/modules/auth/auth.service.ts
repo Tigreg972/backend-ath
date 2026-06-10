@@ -36,8 +36,14 @@ export class AuthService {
 
     const token = this.jwtService.sign(payload);
 
-    const { password, resetPasswordToken, resetPasswordExpiresAt, ...safeUser } =
-      user;
+    const {
+      password,
+      resetPasswordToken,
+      resetPasswordExpiresAt,
+      emailVerificationToken,
+      emailVerificationExpiresAt,
+      ...safeUser
+    } = user;
 
     return {
       token,
@@ -54,19 +60,37 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
+    const verificationToken = randomBytes(32).toString('hex');
 
     const user = await this.usersService.create({
       firstName: dto.firstName,
       lastName: dto.lastName,
-      fullName: `${dto.firstName} ${dto.lastName}`,
+      fullName: `${dto.firstName} ${dto.lastName}`.trim(),
       phone: dto.phone,
       email: dto.email,
       password: hashedPassword,
+      isEmailConfirmed: false,
+      emailVerificationToken: verificationToken,
+      emailVerificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
 
-    await this.mailService.sendWelcomeEmail(user.email, user.fullName);
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') ||
+      'http://localhost:5173';
 
-    return this.buildAuthResponse(user);
+    const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
+
+    await this.mailService.sendEmailVerificationEmail(
+      user.email,
+      user.fullName,
+      verificationUrl,
+    );
+
+    return {
+      message:
+        'Compte créé avec succès. Vérifiez votre boîte mail pour activer votre compte.',
+      user: this.buildAuthResponse(user).user,
+    };
   }
 
   async login(dto: LoginDto) {
@@ -82,11 +106,37 @@ export class AuthService {
       throw new UnauthorizedException('Email ou mot de passe incorrect');
     }
 
+    if (!user.isActive) {
+      throw new UnauthorizedException('Compte désactivé');
+    }
+
     return this.buildAuthResponse(user);
   }
 
   async me(userId: number) {
     return this.usersService.findSafeById(userId);
+  }
+
+  async verifyEmail(token: string) {
+    const user = await this.usersService.findByEmailVerificationToken(token);
+
+    if (!user || !user.emailVerificationExpiresAt) {
+      throw new NotFoundException('Lien de validation invalide');
+    }
+
+    if (user.emailVerificationExpiresAt.getTime() < Date.now()) {
+      throw new UnauthorizedException('Lien de validation expiré');
+    }
+
+    user.isEmailConfirmed = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpiresAt = undefined;
+
+    await this.usersService.save(user);
+
+    return {
+      message: 'Adresse email confirmée avec succès',
+    };
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
@@ -107,7 +157,8 @@ export class AuthService {
     await this.usersService.save(user);
 
     const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+      this.configService.get<string>('FRONTEND_URL') ||
+      'http://localhost:5173';
 
     const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
 

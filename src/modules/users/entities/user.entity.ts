@@ -57,6 +57,12 @@ export class User {
   @Column({ type: 'datetime', nullable: true })
   resetPasswordExpiresAt?: Date;
 
+  @Column({ nullable: true })
+  emailVerificationToken?: string;
+
+  @Column({ type: 'datetime', nullable: true })
+  emailVerificationExpiresAt?: Date;
+
   @OneToMany(() => Address, (address) => address.user)
   addresses!: Address[];
 
