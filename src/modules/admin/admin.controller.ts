@@ -22,6 +22,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 
 import { AdminService } from './admin.service';
+import { ChatbotService } from '../chatbot/chatbot.service';
 
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -51,11 +52,23 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly homeService: HomeService,
+    private readonly chatbotService: ChatbotService,
   ) {}
 
   @Get('stats')
   getStats(@Query('period') period?: string) {
     return this.adminService.getStats(period);
+  }
+
+  @Get('chatbot/messages')
+  findAllChatbotMessages(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.chatbotService.findAllForAdmin(
+      Number(page) || 1,
+      Number(limit) || 20,
+    );
   }
 
   @Get('products')
@@ -104,61 +117,6 @@ export class AdminController {
     return this.adminService.uploadProductImage(Number(id), imageUrl);
   }
 
-  @Get('products/:id/images')
-  getProductImages(@Param('id') id: string) {
-    return this.adminService.getProductImages(Number(id));
-  }
-
-  @Post('products/:id/images')
-  @UseInterceptors(FileInterceptor('file', imageUploadOptions('products')))
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-        },
-      },
-    },
-  })
-  addProductImage(
-    @Param('id') id: string,
-    @UploadedFile() file: Express.Multer.File,
-  ) {
-    const imageUrl = `/uploads/products/${file.filename}`;
-
-    return this.adminService.uploadProductImage(Number(id), imageUrl);
-  }
-
-  @Patch('products/:id/images/:imageId')
-  updateProductImage(
-    @Param('id') id: string,
-    @Param('imageId') imageId: string,
-    @Body()
-    dto: {
-      url?: string;
-      alt?: string;
-      altText?: string;
-      displayOrder?: number;
-    },
-  ) {
-    return this.adminService.updateProductImage(
-      Number(id),
-      Number(imageId),
-      dto,
-    );
-  }
-
-  @Delete('products/:id/images/:imageId')
-  deleteProductImage(
-    @Param('id') id: string,
-    @Param('imageId') imageId: string,
-  ) {
-    return this.adminService.deleteProductImage(Number(id), Number(imageId));
-  }
-
   @Delete('products/:id')
   deleteProduct(@Param('id') id: string) {
     return this.adminService.deleteProduct(Number(id));
@@ -180,29 +138,6 @@ export class AdminController {
     @Body() dto: UpdateAdminCategoryDto,
   ) {
     return this.adminService.updateCategory(Number(id), dto);
-  }
-
-  @Post('categories/:id/image')
-  @UseInterceptors(FileInterceptor('file', imageUploadOptions('categories')))
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-        },
-      },
-    },
-  })
-  uploadCategoryImage(
-    @Param('id') id: string,
-    @UploadedFile() file: Express.Multer.File,
-  ) {
-    const imageUrl = `/uploads/categories/${file.filename}`;
-
-    return this.adminService.uploadCategoryImage(Number(id), imageUrl);
   }
 
   @Delete('categories/:id')

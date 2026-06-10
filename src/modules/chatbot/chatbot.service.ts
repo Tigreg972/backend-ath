@@ -50,17 +50,10 @@ export class ChatbotService {
   private detectLanguageFromMessage(message: string): ChatbotLanguage | null {
     const text = message.trim();
 
-    if (!text) {
-      return null;
-    }
+    if (!text) return null;
 
-    if (/[\u0600-\u06FF]/.test(text)) {
-      return 'ar';
-    }
-
-    if (/[\u0590-\u05FF]/.test(text)) {
-      return 'he';
-    }
+    if (/[\u0600-\u06FF]/.test(text)) return 'ar';
+    if (/[\u0590-\u05FF]/.test(text)) return 'he';
 
     const lowerText = text.toLowerCase();
 
@@ -108,13 +101,8 @@ export class ChatbotService {
       lowerText.includes(word),
     ).length;
 
-    if (englishScore > frenchScore) {
-      return 'en';
-    }
-
-    if (frenchScore > englishScore) {
-      return 'fr';
-    }
+    if (englishScore > frenchScore) return 'en';
+    if (frenchScore > englishScore) return 'fr';
 
     return null;
   }
@@ -249,11 +237,35 @@ Important rules:
     });
   }
 
-  async findAllForAdmin() {
-    return this.chatbotRepository.find({
+  async findAllForAdmin(page = 1, limit = 20) {
+    const safePage = Math.max(Number(page) || 1, 1);
+    const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+
+    const [messages, total] = await this.chatbotRepository.findAndCount({
+      relations: {
+        user: true,
+      },
       order: {
         createdAt: 'DESC',
       },
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
     });
+
+    return {
+      items: messages.map((message) => ({
+        id: message.id,
+        userId: message.userId,
+        userEmail: message.user?.email || null,
+        userFullName: message.user?.fullName || null,
+        message: message.message,
+        reply: message.reply,
+        createdAt: message.createdAt,
+      })),
+      page: safePage,
+      limit: safeLimit,
+      total,
+      totalPages: Math.ceil(total / safeLimit),
+    };
   }
 }
