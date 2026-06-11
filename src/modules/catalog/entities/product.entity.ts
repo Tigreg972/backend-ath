@@ -7,8 +7,10 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+
 import { Category } from './category.entity';
 import { ProductImage } from './product-image.entity';
+import { ProductTranslation } from './product-translation.entity';
 
 @Entity('products')
 export class Product {
@@ -62,6 +64,15 @@ export class Product {
     cascade: true,
   })
   images!: ProductImage[];
+
+  @OneToMany(
+    () => ProductTranslation,
+    (translation) => translation.product,
+    {
+      cascade: true,
+    },
+  )
+  translations!: ProductTranslation[];
 
   @CreateDateColumn()
   createdAt!: Date;

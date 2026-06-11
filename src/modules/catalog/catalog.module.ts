@@ -7,11 +7,18 @@ import { CatalogService } from './catalog.service';
 import { Category } from './entities/category.entity';
 import { Product } from './entities/product.entity';
 import { ProductImage } from './entities/product-image.entity';
+import { ProductTranslation } from './entities/product-translation.entity';
+
 import { HomeModule } from '../home/home.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Category, Product, ProductImage]),
+    TypeOrmModule.forFeature([
+      Category,
+      Product,
+      ProductImage,
+      ProductTranslation,
+    ]),
     HomeModule,
   ],
   controllers: [CatalogController],

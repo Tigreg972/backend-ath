@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 
 import { Product } from '../catalog/entities/product.entity';
 import { ProductImage } from '../catalog/entities/product-image.entity';
+import { ProductTranslation } from '../catalog/entities/product-translation.entity';
 import { Category } from '../catalog/entities/category.entity';
 
 import { Order } from '../orders/entities/order.entity';
@@ -27,6 +28,7 @@ import { UpdateAdminCategoryDto } from './dto/update-admin-category.dto';
 
 import { UpdateAdminOrderStatusDto } from './dto/update-admin-order-status.dto';
 import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
+import { UpsertProductTranslationDto } from './dto/upsert-product-translation.dto';
 
 @Injectable()
 export class AdminService {
@@ -36,6 +38,9 @@ export class AdminService {
 
     @InjectRepository(ProductImage)
     private readonly imagesRepository: Repository<ProductImage>,
+
+    @InjectRepository(ProductTranslation)
+    private readonly productTranslationsRepository: Repository<ProductTranslation>,
 
     @InjectRepository(Category)
     private readonly categoriesRepository: Repository<Category>,
@@ -58,8 +63,20 @@ export class AdminService {
   }
 
   private sanitizeUser(user: User) {
-    const { password, resetPasswordToken, resetPasswordExpiresAt, ...safeUser } =
-      user;
+    const {
+      password,
+      resetPasswordToken,
+      resetPasswordExpiresAt,
+      emailVerificationToken,
+      emailVerificationExpiresAt,
+      pendingEmail,
+      emailChangeToken,
+      emailChangeExpiresAt,
+      adminTwoFactorCode,
+      adminTwoFactorExpiresAt,
+      adminTwoFactorRememberMe,
+      ...safeUser
+    } = user;
 
     return safeUser;
   }
@@ -103,6 +120,11 @@ export class AdminService {
       order: { displayOrder: 'ASC', id: 'ASC' },
     });
 
+    const translations = await this.productTranslationsRepository.find({
+      where: { productId: product.id },
+      order: { language: 'ASC' },
+    });
+
     return {
       id: product.id,
       sku: product.sku,
@@ -132,6 +154,7 @@ export class AdminService {
         altText: image.altText || product.name,
         displayOrder: image.displayOrder,
       })),
+      translations,
     };
   }
 
@@ -300,10 +323,78 @@ export class AdminService {
     });
 
     if (!product) {
-      throw new NotFoundException('Produit introuvable');
+      throw new NotFoundException('PRODUCT_NOT_FOUND');
     }
 
     return this.mapProduct(product);
+  }
+
+  async findProductTranslations(productId: number) {
+    const product = await this.productsRepository.findOne({
+      where: { id: productId },
+    });
+
+    if (!product) {
+      throw new NotFoundException('PRODUCT_NOT_FOUND');
+    }
+
+    return this.productTranslationsRepository.find({
+      where: { productId },
+      order: { language: 'ASC' },
+    });
+  }
+
+  async upsertProductTranslation(
+    productId: number,
+    dto: UpsertProductTranslationDto,
+  ) {
+    const product = await this.productsRepository.findOne({
+      where: { id: productId },
+    });
+
+    if (!product) {
+      throw new NotFoundException('PRODUCT_NOT_FOUND');
+    }
+
+    let translation = await this.productTranslationsRepository.findOne({
+      where: {
+        productId,
+        language: dto.language,
+      },
+    });
+
+    if (!translation) {
+      translation = this.productTranslationsRepository.create({
+        productId,
+        language: dto.language,
+      });
+    }
+
+    translation.name = dto.name;
+    translation.shortDescription = dto.shortDescription;
+    translation.description = dto.description;
+    translation.techSpecs = dto.techSpecs;
+
+    return this.productTranslationsRepository.save(translation);
+  }
+
+  async deleteProductTranslation(productId: number, language: string) {
+    const translation = await this.productTranslationsRepository.findOne({
+      where: {
+        productId,
+        language: language as any,
+      },
+    });
+
+    if (!translation) {
+      throw new NotFoundException('PRODUCT_TRANSLATION_NOT_FOUND');
+    }
+
+    await this.productTranslationsRepository.remove(translation);
+
+    return {
+      message: 'PRODUCT_TRANSLATION_DELETED_SUCCESS',
+    };
   }
 
   async createProduct(dto: CreateAdminProductDto) {
@@ -353,7 +444,7 @@ export class AdminService {
     });
 
     if (!product) {
-      throw new NotFoundException('Produit introuvable');
+      throw new NotFoundException('PRODUCT_NOT_FOUND');
     }
 
     Object.assign(product, {
@@ -405,7 +496,7 @@ export class AdminService {
     });
 
     if (!product) {
-      throw new NotFoundException('Produit introuvable');
+      throw new NotFoundException('PRODUCT_NOT_FOUND');
     }
 
     const currentImagesCount = await this.imagesRepository.count({
@@ -428,7 +519,7 @@ export class AdminService {
     });
 
     if (!product) {
-      throw new NotFoundException('Produit introuvable');
+      throw new NotFoundException('PRODUCT_NOT_FOUND');
     }
 
     const images = await this.imagesRepository.find({
@@ -460,7 +551,7 @@ export class AdminService {
     });
 
     if (!image) {
-      throw new NotFoundException('Image produit introuvable');
+      throw new NotFoundException('PRODUCT_IMAGE_NOT_FOUND');
     }
 
     if (dto.url !== undefined) {
@@ -486,7 +577,7 @@ export class AdminService {
     });
 
     if (!image) {
-      throw new NotFoundException('Image produit introuvable');
+      throw new NotFoundException('PRODUCT_IMAGE_NOT_FOUND');
     }
 
     await this.imagesRepository.delete(image.id);
@@ -500,13 +591,13 @@ export class AdminService {
     });
 
     if (!product) {
-      throw new NotFoundException('Produit introuvable');
+      throw new NotFoundException('PRODUCT_NOT_FOUND');
     }
 
     await this.productsRepository.delete(id);
 
     return {
-      message: 'Produit supprimé avec succès',
+      message: 'PRODUCT_DELETED_SUCCESS',
     };
   }
 
@@ -535,7 +626,7 @@ export class AdminService {
     });
 
     if (!category) {
-      throw new NotFoundException('Catégorie introuvable');
+      throw new NotFoundException('CATEGORY_NOT_FOUND');
     }
 
     Object.assign(category, {
@@ -556,7 +647,7 @@ export class AdminService {
     });
 
     if (!category) {
-      throw new NotFoundException('Catégorie introuvable');
+      throw new NotFoundException('CATEGORY_NOT_FOUND');
     }
 
     category.imageUrl = imageUrl;
@@ -570,13 +661,13 @@ export class AdminService {
     });
 
     if (!category) {
-      throw new NotFoundException('Catégorie introuvable');
+      throw new NotFoundException('CATEGORY_NOT_FOUND');
     }
 
     await this.categoriesRepository.delete(id);
 
     return {
-      message: 'Catégorie supprimée avec succès',
+      message: 'CATEGORY_DELETED_SUCCESS',
     };
   }
 
@@ -594,7 +685,7 @@ export class AdminService {
     });
 
     if (!order) {
-      throw new NotFoundException('Commande introuvable');
+      throw new NotFoundException('ORDER_NOT_FOUND');
     }
 
     return this.mapAdminOrder(order);
@@ -606,7 +697,7 @@ export class AdminService {
     });
 
     if (!order) {
-      throw new NotFoundException('Commande introuvable');
+      throw new NotFoundException('ORDER_NOT_FOUND');
     }
 
     order.status = dto.status as any;
@@ -630,7 +721,7 @@ export class AdminService {
     });
 
     if (!user) {
-      throw new NotFoundException('Utilisateur introuvable');
+      throw new NotFoundException('USER_NOT_FOUND');
     }
 
     return this.sanitizeUser(user);
@@ -642,7 +733,7 @@ export class AdminService {
     });
 
     if (!user) {
-      throw new NotFoundException('Utilisateur introuvable');
+      throw new NotFoundException('USER_NOT_FOUND');
     }
 
     if (dto.email && dto.email !== user.email) {
@@ -651,7 +742,7 @@ export class AdminService {
       });
 
       if (existingUser && existingUser.id !== user.id) {
-        throw new ConflictException('Cet email est déjà utilisé');
+        throw new ConflictException('EMAIL_ALREADY_USED');
       }
 
       user.email = dto.email;
@@ -691,7 +782,7 @@ export class AdminService {
     });
 
     if (!user) {
-      throw new NotFoundException('Utilisateur introuvable');
+      throw new NotFoundException('USER_NOT_FOUND');
     }
 
     if (user.role === 'admin') {
@@ -703,9 +794,7 @@ export class AdminService {
       });
 
       if (adminCount <= 1) {
-        throw new BadRequestException(
-          'Impossible de supprimer le dernier administrateur actif',
-        );
+        throw new BadRequestException('LAST_ADMIN_DELETE_FORBIDDEN');
       }
     }
 
@@ -726,7 +815,7 @@ export class AdminService {
     await this.usersRepository.save(user);
 
     return {
-      message: 'Utilisateur supprimé avec succès',
+      message: 'USER_DELETED_SUCCESS',
     };
   }
 }

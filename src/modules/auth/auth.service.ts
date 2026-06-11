@@ -29,14 +29,16 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
-  private buildAuthResponse(user: any) {
+  private buildAuthResponse(user: any, rememberMe = false) {
     const payload = {
       sub: user.id,
       email: user.email,
       role: user.role,
     };
 
-    const token = this.jwtService.sign(payload);
+    const token = this.jwtService.sign(payload, {
+      expiresIn: rememberMe ? '30d' : '24h',
+    });
 
     const {
       password,
@@ -49,12 +51,14 @@ export class AuthService {
       emailChangeExpiresAt,
       adminTwoFactorCode,
       adminTwoFactorExpiresAt,
+      adminTwoFactorRememberMe,
       ...safeUser
     } = user;
 
     return {
       token,
       accessToken: token,
+      expiresIn: rememberMe ? '30d' : '24h',
       user: safeUser,
     };
   }
@@ -129,6 +133,7 @@ export class AuthService {
 
       user.adminTwoFactorCode = await bcrypt.hash(code, 10);
       user.adminTwoFactorExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+      user.adminTwoFactorRememberMe = Boolean(dto.rememberMe);
 
       await this.usersService.save(user);
 
@@ -145,7 +150,7 @@ export class AuthService {
       };
     }
 
-    return this.buildAuthResponse(user);
+    return this.buildAuthResponse(user, Boolean(dto.rememberMe));
   }
 
   async verifyTwoFactor(dto: VerifyTwoFactorDto) {
@@ -166,6 +171,7 @@ export class AuthService {
     if (user.adminTwoFactorExpiresAt.getTime() < Date.now()) {
       user.adminTwoFactorCode = undefined;
       user.adminTwoFactorExpiresAt = undefined;
+      user.adminTwoFactorRememberMe = false;
 
       await this.usersService.save(user);
 
@@ -181,12 +187,15 @@ export class AuthService {
       throw new UnauthorizedException('INVALID_2FA_CODE');
     }
 
+    const rememberMe = Boolean(user.adminTwoFactorRememberMe);
+
     user.adminTwoFactorCode = undefined;
     user.adminTwoFactorExpiresAt = undefined;
+    user.adminTwoFactorRememberMe = false;
 
     await this.usersService.save(user);
 
-    return this.buildAuthResponse(user);
+    return this.buildAuthResponse(user, rememberMe);
   }
 
   async me(userId: number) {

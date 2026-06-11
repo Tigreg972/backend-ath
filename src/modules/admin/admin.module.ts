@@ -6,6 +6,7 @@ import { AdminService } from './admin.service';
 
 import { Product } from '../catalog/entities/product.entity';
 import { ProductImage } from '../catalog/entities/product-image.entity';
+import { ProductTranslation } from '../catalog/entities/product-translation.entity';
 import { Category } from '../catalog/entities/category.entity';
 
 import { Order } from '../orders/entities/order.entity';
@@ -23,6 +24,7 @@ import { ChatbotModule } from '../chatbot/chatbot.module';
     TypeOrmModule.forFeature([
       Product,
       ProductImage,
+      ProductTranslation,
       Category,
       Order,
       OrderItem,

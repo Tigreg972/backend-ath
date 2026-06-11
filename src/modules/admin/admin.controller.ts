@@ -31,6 +31,7 @@ import { imageUploadOptions } from '../../common/uploads/image-upload.config';
 
 import { CreateAdminProductDto } from './dto/create-admin-product.dto';
 import { UpdateAdminProductDto } from './dto/update-admin-product.dto';
+import { UpsertProductTranslationDto } from './dto/upsert-product-translation.dto';
 
 import { CreateAdminCategoryDto } from './dto/create-admin-category.dto';
 import { UpdateAdminCategoryDto } from './dto/update-admin-category.dto';
@@ -95,6 +96,27 @@ export class AdminController {
   @Get('products/:id')
   findProductById(@Param('id') id: string) {
     return this.adminService.findProductById(Number(id));
+  }
+
+  @Get('products/:id/translations')
+  findProductTranslations(@Param('id') id: string) {
+    return this.adminService.findProductTranslations(Number(id));
+  }
+
+  @Post('products/:id/translations')
+  upsertProductTranslation(
+    @Param('id') id: string,
+    @Body() dto: UpsertProductTranslationDto,
+  ) {
+    return this.adminService.upsertProductTranslation(Number(id), dto);
+  }
+
+  @Delete('products/:id/translations/:language')
+  deleteProductTranslation(
+    @Param('id') id: string,
+    @Param('language') language: string,
+  ) {
+    return this.adminService.deleteProductTranslation(Number(id), language);
   }
 
   @Post('products')

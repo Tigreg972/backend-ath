@@ -78,6 +78,9 @@ export class User {
   @Column({ type: 'datetime', nullable: true })
   adminTwoFactorExpiresAt?: Date;
 
+  @Column({ default: false })
+  adminTwoFactorRememberMe!: boolean;
+
   @OneToMany(() => Address, (address) => address.user)
   addresses!: Address[];
 
