@@ -51,6 +51,17 @@ export class OrdersController {
     );
   }
 
+  @Post(':id/reorder')
+  reorder(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+  ) {
+    return this.ordersService.reorder(
+      user.id,
+      Number(id),
+    );
+  }
+
   @Get(':id/invoice')
   async downloadInvoice(
     @CurrentUser() user: any,

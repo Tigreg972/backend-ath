@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+
 import { ConfigService } from '@nestjs/config';
 
 import { InjectRepository } from '@nestjs/typeorm';
@@ -6,11 +10,17 @@ import { Repository } from 'typeorm';
 
 import OpenAI from 'openai';
 
-import { ChatbotMessage } from './entities/chatbot-message.entity';
+import {
+  ChatbotMessage,
+  ChatbotSupportStatus,
+} from './entities/chatbot-message.entity';
+
 import {
   ChatbotLanguage,
   CreateChatbotMessageDto,
 } from './dto/create-chatbot-message.dto';
+
+import { EscalateChatbotMessageDto } from './dto/escalate-chatbot-message.dto';
 
 @Injectable()
 export class ChatbotService {
@@ -141,6 +151,17 @@ export class ChatbotService {
     return replies[language];
   }
 
+  private getEscalationReply(language: ChatbotLanguage): string {
+    const replies: Record<ChatbotLanguage, string> = {
+      fr: 'Votre demande a été transmise à notre équipe support. Un administrateur pourra la consulter depuis le back-office.',
+      en: 'Your request has been forwarded to our support team. An administrator will be able to review it from the back office.',
+      ar: 'تم إرسال طلبك إلى فريق الدعم. سيتمكن أحد المسؤولين من مراجعته من لوحة الإدارة.',
+      he: 'הבקשה שלך הועברה לצוות התמיכה. מנהל יוכל לבדוק אותה ממערכת הניהול.',
+    };
+
+    return replies[language];
+  }
+
   private buildSystemPrompt(language: ChatbotLanguage): string {
     const languageLabel = this.getLanguageLabel(language);
 
@@ -167,7 +188,7 @@ Important rules:
 - Never invent stock availability.
 - Never invent delivery dates.
 - Never invent personal information.
-- If you do not have the information, invite the user to contact the team through the contact form.
+- If you do not have the information, invite the user to contact the team through the contact form or ask to speak with a human support agent.
 - Do not ask for sensitive banking data.
 - Do not ask for a full card number or CVV.
 `.trim();
@@ -216,6 +237,8 @@ Important rules:
       userId,
       message: dto.message,
       reply,
+      needsHumanSupport: false,
+      supportStatus: ChatbotSupportStatus.NONE,
     });
 
     await this.chatbotRepository.save(message);
@@ -223,6 +246,35 @@ Important rules:
     return {
       reply,
       language,
+    };
+  }
+
+  async escalate(userId: number, dto: EscalateChatbotMessageDto) {
+    const language = this.resolveReplyLanguage(dto.language, dto.message);
+    const reply = this.getEscalationReply(language);
+
+    const message = this.chatbotRepository.create({
+      userId,
+      message: dto.message,
+      reply,
+      needsHumanSupport: true,
+      supportStatus: ChatbotSupportStatus.PENDING,
+      supportSubject: dto.subject || 'Demande transférée au support',
+      supportRequestedAt: new Date(),
+    });
+
+    const savedMessage = await this.chatbotRepository.save(message);
+
+    return {
+      message: 'CHATBOT_ESCALATION_CREATED',
+      reply,
+      language,
+      escalation: {
+        id: savedMessage.id,
+        status: savedMessage.supportStatus,
+        subject: savedMessage.supportSubject,
+        createdAt: savedMessage.createdAt,
+      },
     };
   }
 
@@ -260,12 +312,84 @@ Important rules:
         userFullName: message.user?.fullName || null,
         message: message.message,
         reply: message.reply,
+        needsHumanSupport: message.needsHumanSupport,
+        supportStatus: message.supportStatus,
+        supportSubject: message.supportSubject,
+        supportRequestedAt: message.supportRequestedAt,
+        supportResolvedAt: message.supportResolvedAt,
         createdAt: message.createdAt,
       })),
       page: safePage,
       limit: safeLimit,
       total,
       totalPages: Math.ceil(total / safeLimit),
+    };
+  }
+
+  async findEscalationsForAdmin(page = 1, limit = 20) {
+    const safePage = Math.max(Number(page) || 1, 1);
+    const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+
+    const [messages, total] = await this.chatbotRepository.findAndCount({
+      where: {
+        needsHumanSupport: true,
+      },
+      relations: {
+        user: true,
+      },
+      order: {
+        supportRequestedAt: 'DESC',
+        createdAt: 'DESC',
+      },
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
+    });
+
+    return {
+      items: messages.map((message) => ({
+        id: message.id,
+        userId: message.userId,
+        userEmail: message.user?.email || null,
+        userFullName: message.user?.fullName || null,
+        message: message.message,
+        reply: message.reply,
+        supportStatus: message.supportStatus,
+        supportSubject: message.supportSubject,
+        supportRequestedAt: message.supportRequestedAt,
+        supportResolvedAt: message.supportResolvedAt,
+        createdAt: message.createdAt,
+      })),
+      page: safePage,
+      limit: safeLimit,
+      total,
+      totalPages: Math.ceil(total / safeLimit),
+    };
+  }
+
+  async resolveEscalation(messageId: number) {
+    const message = await this.chatbotRepository.findOne({
+      where: {
+        id: messageId,
+        needsHumanSupport: true,
+      },
+    });
+
+    if (!message) {
+      throw new NotFoundException('CHATBOT_ESCALATION_NOT_FOUND');
+    }
+
+    message.supportStatus = ChatbotSupportStatus.RESOLVED;
+    message.supportResolvedAt = new Date();
+
+    const savedMessage = await this.chatbotRepository.save(message);
+
+    return {
+      message: 'CHATBOT_ESCALATION_RESOLVED',
+      escalation: {
+        id: savedMessage.id,
+        status: savedMessage.supportStatus,
+        resolvedAt: savedMessage.supportResolvedAt,
+      },
     };
   }
 }

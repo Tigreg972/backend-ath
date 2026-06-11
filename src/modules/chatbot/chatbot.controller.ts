@@ -13,6 +13,7 @@ import {
 
 import { ChatbotService } from './chatbot.service';
 import { CreateChatbotMessageDto } from './dto/create-chatbot-message.dto';
+import { EscalateChatbotMessageDto } from './dto/escalate-chatbot-message.dto';
 
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -32,6 +33,14 @@ export class ChatbotController {
     @Body() dto: CreateChatbotMessageDto,
   ) {
     return this.chatbotService.create(user.id, dto);
+  }
+
+  @Post('escalate')
+  escalate(
+    @CurrentUser() user: any,
+    @Body() dto: EscalateChatbotMessageDto,
+  ) {
+    return this.chatbotService.escalate(user.id, dto);
   }
 
   @Get('messages')

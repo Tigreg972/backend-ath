@@ -92,6 +92,49 @@ export class OrdersService {
     };
   }
 
+  private mapCartItem(item: CartItem) {
+    const firstImage = item.product?.images?.[0]?.url || '';
+
+    return {
+      id: item.id,
+      productId: item.productId,
+      quantity: item.quantity,
+      product: {
+        id: item.product.id,
+        name: item.product.name,
+        slug: item.product.slug,
+        priceCents: item.product.priceCents,
+        stock: item.product.stock,
+        imageUrl: firstImage,
+        images: item.product.images || [],
+      },
+    };
+  }
+
+  private async getCartResponse(userId: number) {
+    const items = await this.cartItemsRepository.find({
+      where: { userId },
+    });
+
+    const mappedItems = items.map((item) => this.mapCartItem(item));
+
+    const totalItems = mappedItems.reduce(
+      (sum, item) => sum + item.quantity,
+      0,
+    );
+
+    const totalPriceCents = mappedItems.reduce(
+      (sum, item) => sum + item.quantity * item.product.priceCents,
+      0,
+    );
+
+    return {
+      items: mappedItems,
+      totalItems,
+      totalPriceCents,
+    };
+  }
+
   private async mapOrder(order: Order) {
     let shippingAddress: Address | null = null;
 
@@ -122,7 +165,7 @@ export class OrdersService {
     });
 
     if (cartItems.length === 0) {
-      throw new BadRequestException('Panier vide');
+      throw new BadRequestException('CART_EMPTY');
     }
 
     let shippingAddress: Address | null = null;
@@ -136,7 +179,7 @@ export class OrdersService {
       });
 
       if (!shippingAddress) {
-        throw new NotFoundException('Adresse de livraison introuvable');
+        throw new NotFoundException('SHIPPING_ADDRESS_NOT_FOUND');
       }
     }
 
@@ -171,11 +214,11 @@ export class OrdersService {
       });
 
       if (!product) {
-        throw new NotFoundException(`Produit ${cartItem.productId} introuvable`);
+        throw new NotFoundException('PRODUCT_NOT_FOUND');
       }
 
       if (product.stock < cartItem.quantity) {
-        throw new BadRequestException(`Stock insuffisant pour ${product.name}`);
+        throw new BadRequestException('INSUFFICIENT_STOCK');
       }
 
       const itemTotalCents = product.priceCents * cartItem.quantity;
@@ -270,9 +313,116 @@ export class OrdersService {
     });
 
     if (!order) {
-      throw new NotFoundException('Commande introuvable');
+      throw new NotFoundException('ORDER_NOT_FOUND');
     }
 
     return this.mapOrder(order);
+  }
+
+  async reorder(userId: number, orderId: number) {
+    const order = await this.ordersRepository.findOne({
+      where: {
+        id: orderId,
+        userId,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('ORDER_NOT_FOUND');
+    }
+
+    const orderItems = await this.orderItemsRepository.find({
+      where: {
+        orderId: order.id,
+      },
+    });
+
+    if (orderItems.length === 0) {
+      throw new BadRequestException('ORDER_EMPTY');
+    }
+
+    const unavailableProducts: {
+      productId: number;
+      name: string;
+      reason: string;
+    }[] = [];
+
+    const addedProducts: {
+      productId: number;
+      name: string;
+      quantity: number;
+    }[] = [];
+
+    for (const orderItem of orderItems) {
+      const product = await this.productsRepository.findOne({
+        where: {
+          id: orderItem.productId,
+          isActive: true,
+        },
+      });
+
+      if (!product) {
+        unavailableProducts.push({
+          productId: orderItem.productId,
+          name: orderItem.productName,
+          reason: 'PRODUCT_NOT_FOUND_OR_INACTIVE',
+        });
+        continue;
+      }
+
+      if (product.stock <= 0) {
+        unavailableProducts.push({
+          productId: product.id,
+          name: product.name,
+          reason: 'OUT_OF_STOCK',
+        });
+        continue;
+      }
+
+      const quantityToAdd = Math.min(orderItem.quantity, product.stock);
+
+      let cartItem = await this.cartItemsRepository.findOne({
+        where: {
+          userId,
+          productId: product.id,
+        },
+      });
+
+      if (cartItem) {
+        const newQuantity = Math.min(
+          cartItem.quantity + quantityToAdd,
+          product.stock,
+        );
+
+        cartItem.quantity = newQuantity;
+      } else {
+        cartItem = this.cartItemsRepository.create({
+          userId,
+          productId: product.id,
+          quantity: quantityToAdd,
+        });
+      }
+
+      await this.cartItemsRepository.save(cartItem);
+
+      addedProducts.push({
+        productId: product.id,
+        name: product.name,
+        quantity: quantityToAdd,
+      });
+    }
+
+    if (addedProducts.length === 0) {
+      throw new BadRequestException('NO_PRODUCT_AVAILABLE_FOR_REORDER');
+    }
+
+    const cart = await this.getCartResponse(userId);
+
+    return {
+      message: 'REORDER_SUCCESS',
+      addedProducts,
+      unavailableProducts,
+      cart,
+    };
   }
 }

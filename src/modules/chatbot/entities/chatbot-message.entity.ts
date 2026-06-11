@@ -8,6 +8,12 @@ import {
 
 import { User } from '../../users/entities/user.entity';
 
+export enum ChatbotSupportStatus {
+  NONE = 'none',
+  PENDING = 'pending',
+  RESOLVED = 'resolved',
+}
+
 @Entity('chatbot_messages')
 export class ChatbotMessage {
   @PrimaryGeneratedColumn()
@@ -30,6 +36,31 @@ export class ChatbotMessage {
     type: 'text',
   })
   reply!: string;
+
+  @Column({ default: false })
+  needsHumanSupport!: boolean;
+
+  @Column({
+    type: 'enum',
+    enum: ChatbotSupportStatus,
+    default: ChatbotSupportStatus.NONE,
+  })
+  supportStatus!: ChatbotSupportStatus;
+
+  @Column({ nullable: true })
+  supportSubject?: string;
+
+  @Column({
+    type: 'datetime',
+    nullable: true,
+  })
+  supportRequestedAt?: Date;
+
+  @Column({
+    type: 'datetime',
+    nullable: true,
+  })
+  supportResolvedAt?: Date;
 
   @CreateDateColumn()
   createdAt!: Date;

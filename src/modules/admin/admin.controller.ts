@@ -71,6 +71,22 @@ export class AdminController {
     );
   }
 
+  @Get('chatbot/escalations')
+  findChatbotEscalations(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.chatbotService.findEscalationsForAdmin(
+      Number(page) || 1,
+      Number(limit) || 20,
+    );
+  }
+
+  @Patch('chatbot/escalations/:id/resolve')
+  resolveChatbotEscalation(@Param('id') id: string) {
+    return this.chatbotService.resolveEscalation(Number(id));
+  }
+
   @Get('products')
   findAllProducts() {
     return this.adminService.findAllProducts();

@@ -6,9 +6,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 
 import { User } from './entities/user.entity';
 import { Address } from './entities/address.entity';
@@ -21,6 +23,8 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
 import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
 
+import { MailService } from '../mail/mail.service';
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -32,6 +36,9 @@ export class UsersService {
 
     @InjectRepository(PaymentMethod)
     private readonly paymentMethodsRepository: Repository<PaymentMethod>,
+
+    private readonly mailService: MailService,
+    private readonly configService: ConfigService,
   ) {}
 
   private sanitizeUser(user: User) {
@@ -39,6 +46,10 @@ export class UsersService {
       password,
       resetPasswordToken,
       resetPasswordExpiresAt,
+      emailVerificationToken,
+      emailVerificationExpiresAt,
+      emailChangeToken,
+      emailChangeExpiresAt,
       ...safeUser
     } = user;
 
@@ -58,7 +69,7 @@ export class UsersService {
       year < currentYear ||
       (year === currentYear && month < currentMonth)
     ) {
-      throw new BadRequestException('La carte est expirée');
+      throw new BadRequestException('CARD_EXPIRED');
     }
   }
 
@@ -85,6 +96,22 @@ export class UsersService {
     });
   }
 
+  async findByEmailVerificationToken(token: string): Promise<User | null> {
+    return this.usersRepository.findOne({
+      where: {
+        emailVerificationToken: token,
+      },
+    });
+  }
+
+  async findByEmailChangeToken(token: string): Promise<User | null> {
+    return this.usersRepository.findOne({
+      where: {
+        emailChangeToken: token,
+      },
+    });
+  }
+
   async findAll() {
     const users = await this.usersRepository.find({
       order: { createdAt: 'DESC' },
@@ -99,7 +126,7 @@ export class UsersService {
     });
 
     if (!user || user.isActive === false) {
-      throw new NotFoundException('Utilisateur introuvable');
+      throw new NotFoundException('USER_NOT_FOUND');
     }
 
     return user;
@@ -129,11 +156,11 @@ export class UsersService {
   async updateMyProfile(userId: number, dto: UpdateProfileDto) {
     const user = await this.findById(userId);
 
-    if (dto.email && dto.email !== user.email) {
+    const wantsEmailChange = Boolean(dto.email && dto.email !== user.email);
+
+    if (wantsEmailChange) {
       if (!dto.currentPassword) {
-        throw new BadRequestException(
-          'Le mot de passe actuel est obligatoire pour modifier l’email',
-        );
+        throw new BadRequestException('CURRENT_PASSWORD_REQUIRED');
       }
 
       const isPasswordValid = await bcrypt.compare(
@@ -142,17 +169,32 @@ export class UsersService {
       );
 
       if (!isPasswordValid) {
-        throw new UnauthorizedException('Mot de passe actuel incorrect');
+        throw new UnauthorizedException('INVALID_CURRENT_PASSWORD');
       }
 
-      const existingUser = await this.findByEmail(dto.email);
+      const existingUser = await this.findByEmail(dto.email!);
 
       if (existingUser && existingUser.id !== user.id) {
-        throw new ConflictException('Cet email est déjà utilisé');
+        throw new ConflictException('EMAIL_ALREADY_USED');
       }
 
-      user.email = dto.email;
-      user.isEmailConfirmed = false;
+      const emailChangeToken = randomBytes(32).toString('hex');
+
+      user.pendingEmail = dto.email;
+      user.emailChangeToken = emailChangeToken;
+      user.emailChangeExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      const frontendUrl =
+        this.configService.get<string>('FRONTEND_URL') ||
+        'http://localhost:5173';
+
+      const verificationUrl = `${frontendUrl}/verify-email-change?token=${emailChangeToken}`;
+
+      await this.mailService.sendEmailChangeVerificationEmail(
+        dto.email!,
+        user.fullName,
+        verificationUrl,
+      );
     }
 
     if (dto.firstName !== undefined) {
@@ -171,16 +213,49 @@ export class UsersService {
 
     const updatedUser = await this.usersRepository.save(user);
 
-    return this.sanitizeUser(updatedUser);
+    return {
+      message: wantsEmailChange
+        ? 'EMAIL_CHANGE_VERIFICATION_SENT'
+        : 'PROFILE_UPDATED',
+      user: this.sanitizeUser(updatedUser),
+    };
+  }
+
+  async verifyEmailChange(token: string) {
+    const user = await this.findByEmailChangeToken(token);
+
+    if (!user || !user.pendingEmail || !user.emailChangeExpiresAt) {
+      throw new NotFoundException('INVALID_EMAIL_CHANGE_TOKEN');
+    }
+
+    if (user.emailChangeExpiresAt.getTime() < Date.now()) {
+      throw new UnauthorizedException('EMAIL_CHANGE_TOKEN_EXPIRED');
+    }
+
+    const existingUser = await this.findByEmail(user.pendingEmail);
+
+    if (existingUser && existingUser.id !== user.id) {
+      throw new ConflictException('EMAIL_ALREADY_USED');
+    }
+
+    user.email = user.pendingEmail;
+    user.pendingEmail = undefined;
+    user.emailChangeToken = undefined;
+    user.emailChangeExpiresAt = undefined;
+    user.isEmailConfirmed = true;
+
+    await this.usersRepository.save(user);
+
+    return {
+      message: 'EMAIL_CHANGE_VERIFIED_SUCCESS',
+    };
   }
 
   async changeMyPassword(userId: number, dto: ChangePasswordDto) {
     const user = await this.findById(userId);
 
     if (dto.newPassword !== dto.confirmPassword) {
-      throw new BadRequestException(
-        'Le nouveau mot de passe et la confirmation ne correspondent pas',
-      );
+      throw new BadRequestException('PASSWORD_CONFIRMATION_MISMATCH');
     }
 
     const isPasswordValid = await bcrypt.compare(
@@ -189,7 +264,7 @@ export class UsersService {
     );
 
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Mot de passe actuel incorrect');
+      throw new UnauthorizedException('INVALID_CURRENT_PASSWORD');
     }
 
     user.password = await bcrypt.hash(dto.newPassword, 10);
@@ -197,7 +272,7 @@ export class UsersService {
     await this.usersRepository.save(user);
 
     return {
-      message: 'Mot de passe modifié avec succès',
+      message: 'PASSWORD_CHANGED_SUCCESS',
     };
   }
 
@@ -207,26 +282,26 @@ export class UsersService {
     user.firstName = 'Utilisateur';
     user.lastName = 'Supprimé';
     user.fullName = 'Utilisateur supprimé';
-
     user.phone = undefined;
-
     user.email = `deleted_${user.id}_${Date.now()}@deleted.local`;
-
     user.password = await bcrypt.hash(
       `deleted_${Date.now()}_${Math.random()}`,
       10,
     );
-
     user.resetPasswordToken = undefined;
     user.resetPasswordExpiresAt = undefined;
-
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpiresAt = undefined;
+    user.pendingEmail = undefined;
+    user.emailChangeToken = undefined;
+    user.emailChangeExpiresAt = undefined;
     user.isEmailConfirmed = false;
     user.isActive = false;
 
     await this.usersRepository.save(user);
 
     return {
-      message: 'Compte supprimé avec succès',
+      message: 'ACCOUNT_DELETED_SUCCESS',
     };
   }
 
@@ -271,7 +346,7 @@ export class UsersService {
     });
 
     if (!address) {
-      throw new NotFoundException('Adresse introuvable');
+      throw new NotFoundException('ADDRESS_NOT_FOUND');
     }
 
     if (dto.isDefault) {
@@ -295,13 +370,13 @@ export class UsersService {
     });
 
     if (!address) {
-      throw new NotFoundException('Adresse introuvable');
+      throw new NotFoundException('ADDRESS_NOT_FOUND');
     }
 
     await this.addressesRepository.remove(address);
 
     return {
-      message: 'Adresse supprimée avec succès',
+      message: 'ADDRESS_DELETED_SUCCESS',
     };
   }
 
@@ -323,7 +398,7 @@ export class UsersService {
     const cleanCardNumber = String(dto.cardNumber).replace(/\D/g, '');
 
     if (cleanCardNumber.length < 12 || cleanCardNumber.length > 19) {
-      throw new BadRequestException('Numéro de carte invalide');
+      throw new BadRequestException('INVALID_CARD_NUMBER');
     }
 
     const methodsCount = await this.paymentMethodsRepository.count({
@@ -366,7 +441,7 @@ export class UsersService {
     });
 
     if (!method) {
-      throw new NotFoundException('Moyen de paiement introuvable');
+      throw new NotFoundException('PAYMENT_METHOD_NOT_FOUND');
     }
 
     if (dto.expiry !== undefined) {
@@ -378,7 +453,7 @@ export class UsersService {
       const cleanCardNumber = String(dto.cardNumber).replace(/\D/g, '');
 
       if (cleanCardNumber.length < 12 || cleanCardNumber.length > 19) {
-        throw new BadRequestException('Numéro de carte invalide');
+        throw new BadRequestException('INVALID_CARD_NUMBER');
       }
 
       method.last4 = cleanCardNumber.slice(-4);
@@ -417,7 +492,7 @@ export class UsersService {
     });
 
     if (!method) {
-      throw new NotFoundException('Moyen de paiement introuvable');
+      throw new NotFoundException('PAYMENT_METHOD_NOT_FOUND');
     }
 
     const wasDefault = method.isDefault;
@@ -437,7 +512,7 @@ export class UsersService {
     }
 
     return {
-      message: 'Moyen de paiement supprimé avec succès',
+      message: 'PAYMENT_METHOD_DELETED_SUCCESS',
     };
   }
 
@@ -450,7 +525,7 @@ export class UsersService {
     });
 
     if (!method) {
-      throw new NotFoundException('Moyen de paiement introuvable');
+      throw new NotFoundException('PAYMENT_METHOD_NOT_FOUND');
     }
 
     await this.paymentMethodsRepository.update(
@@ -464,12 +539,4 @@ export class UsersService {
 
     return this.formatPaymentMethod(savedMethod);
   }
-  
-  async findByEmailVerificationToken(token: string) {
-  return this.usersRepository.findOne({
-    where: {
-      emailVerificationToken: token,
-    },
-  });
-}
 }

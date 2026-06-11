@@ -63,6 +63,21 @@ export class User {
   @Column({ type: 'datetime', nullable: true })
   emailVerificationExpiresAt?: Date;
 
+  @Column({ nullable: true })
+  pendingEmail?: string;
+
+  @Column({ nullable: true })
+  emailChangeToken?: string;
+
+  @Column({ type: 'datetime', nullable: true })
+  emailChangeExpiresAt?: Date;
+
+  @Column({ nullable: true })
+  adminTwoFactorCode?: string;
+
+  @Column({ type: 'datetime', nullable: true })
+  adminTwoFactorExpiresAt?: Date;
+
   @OneToMany(() => Address, (address) => address.user)
   addresses!: Address[];
 

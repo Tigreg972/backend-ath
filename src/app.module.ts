@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -17,13 +19,19 @@ import { MailModule } from './modules/mail/mail.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { ChatbotModule } from './modules/chatbot/chatbot.module';
 import { HomeModule } from './modules/home/home.module';
-import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 20,
+      },
+    ]),
 
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -52,9 +60,14 @@ import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.
     ContactModule,
     ChatbotModule,
     HomeModule,
-    PaymentMethodsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

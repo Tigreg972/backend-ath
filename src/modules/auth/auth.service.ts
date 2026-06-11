@@ -11,12 +11,14 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 
 import { UsersService } from '../users/users.service';
+import { UserRole } from '../users/entities/user.entity';
 import { MailService } from '../mail/mail.service';
 
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyTwoFactorDto } from './dto/verify-two-factor.dto';
 
 @Injectable()
 export class AuthService {
@@ -42,6 +44,11 @@ export class AuthService {
       resetPasswordExpiresAt,
       emailVerificationToken,
       emailVerificationExpiresAt,
+      pendingEmail,
+      emailChangeToken,
+      emailChangeExpiresAt,
+      adminTwoFactorCode,
+      adminTwoFactorExpiresAt,
       ...safeUser
     } = user;
 
@@ -52,11 +59,15 @@ export class AuthService {
     };
   }
 
+  private generateTwoFactorCode() {
+    return String(Math.floor(100000 + Math.random() * 900000));
+  }
+
   async register(dto: RegisterDto) {
     const existingUser = await this.usersService.findByEmail(dto.email);
 
     if (existingUser) {
-      throw new ConflictException('Cet email est déjà utilisé');
+      throw new ConflictException('EMAIL_ALREADY_USED');
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
@@ -87,8 +98,7 @@ export class AuthService {
     );
 
     return {
-      message:
-        'Compte créé avec succès. Vérifiez votre boîte mail pour activer votre compte.',
+      message: 'REGISTER_SUCCESS_EMAIL_SENT',
       user: this.buildAuthResponse(user).user,
     };
   }
@@ -97,18 +107,84 @@ export class AuthService {
     const user = await this.usersService.findByEmail(dto.email);
 
     if (!user) {
-      throw new UnauthorizedException('Email ou mot de passe incorrect');
+      throw new UnauthorizedException('INVALID_CREDENTIALS');
     }
 
     const isValid = await bcrypt.compare(dto.password, user.password);
 
     if (!isValid) {
-      throw new UnauthorizedException('Email ou mot de passe incorrect');
+      throw new UnauthorizedException('INVALID_CREDENTIALS');
     }
 
     if (!user.isActive) {
-      throw new UnauthorizedException('Compte désactivé');
+      throw new UnauthorizedException('ACCOUNT_DISABLED');
     }
+
+    if (!user.isEmailConfirmed) {
+      throw new UnauthorizedException('EMAIL_NOT_CONFIRMED');
+    }
+
+    if (user.role !== UserRole.ADMIN) {
+      const code = this.generateTwoFactorCode();
+
+      user.adminTwoFactorCode = await bcrypt.hash(code, 10);
+      user.adminTwoFactorExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      await this.usersService.save(user);
+
+      await this.mailService.sendAdminTwoFactorCodeEmail(
+        user.email,
+        user.fullName,
+        code,
+      );
+
+      return {
+        message: 'ADMIN_2FA_REQUIRED',
+        requiresTwoFactor: true,
+        email: user.email,
+      };
+    }
+
+    return this.buildAuthResponse(user);
+  }
+
+  async verifyTwoFactor(dto: VerifyTwoFactorDto) {
+    const user = await this.usersService.findByEmail(dto.email);
+
+    if (!user) {
+      throw new UnauthorizedException('INVALID_2FA_CODE');
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      throw new UnauthorizedException('TWO_FACTOR_NOT_REQUIRED');
+    }
+
+    if (!user.adminTwoFactorCode || !user.adminTwoFactorExpiresAt) {
+      throw new UnauthorizedException('INVALID_2FA_CODE');
+    }
+
+    if (user.adminTwoFactorExpiresAt.getTime() < Date.now()) {
+      user.adminTwoFactorCode = undefined;
+      user.adminTwoFactorExpiresAt = undefined;
+
+      await this.usersService.save(user);
+
+      throw new UnauthorizedException('TWO_FACTOR_CODE_EXPIRED');
+    }
+
+    const isCodeValid = await bcrypt.compare(
+      dto.code,
+      user.adminTwoFactorCode,
+    );
+
+    if (!isCodeValid) {
+      throw new UnauthorizedException('INVALID_2FA_CODE');
+    }
+
+    user.adminTwoFactorCode = undefined;
+    user.adminTwoFactorExpiresAt = undefined;
+
+    await this.usersService.save(user);
 
     return this.buildAuthResponse(user);
   }
@@ -121,11 +197,11 @@ export class AuthService {
     const user = await this.usersService.findByEmailVerificationToken(token);
 
     if (!user || !user.emailVerificationExpiresAt) {
-      throw new NotFoundException('Lien de validation invalide');
+      throw new NotFoundException('INVALID_EMAIL_TOKEN');
     }
 
     if (user.emailVerificationExpiresAt.getTime() < Date.now()) {
-      throw new UnauthorizedException('Lien de validation expiré');
+      throw new UnauthorizedException('EMAIL_TOKEN_EXPIRED');
     }
 
     user.isEmailConfirmed = true;
@@ -135,18 +211,19 @@ export class AuthService {
     await this.usersService.save(user);
 
     return {
-      message: 'Adresse email confirmée avec succès',
+      message: 'EMAIL_VERIFIED_SUCCESS',
     };
+  }
+
+  async verifyEmailChange(token: string) {
+    return this.usersService.verifyEmailChange(token);
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
     const user = await this.usersService.findByEmail(dto.email);
 
     if (!user) {
-      return {
-        message:
-          'Si un compte existe avec cet email, un lien de réinitialisation a été envoyé.',
-      };
+      throw new NotFoundException('EMAIL_NOT_FOUND');
     }
 
     const token = randomBytes(32).toString('hex');
@@ -165,8 +242,7 @@ export class AuthService {
     await this.mailService.sendPasswordResetEmail(user.email, resetUrl);
 
     return {
-      message:
-        'Si un compte existe avec cet email, un lien de réinitialisation a été envoyé.',
+      message: 'RESET_PASSWORD_EMAIL_SENT',
     };
   }
 
@@ -174,11 +250,11 @@ export class AuthService {
     const user = await this.usersService.findByResetPasswordToken(dto.token);
 
     if (!user || !user.resetPasswordExpiresAt) {
-      throw new NotFoundException('Lien de réinitialisation invalide');
+      throw new NotFoundException('INVALID_RESET_TOKEN');
     }
 
     if (user.resetPasswordExpiresAt.getTime() < Date.now()) {
-      throw new UnauthorizedException('Lien de réinitialisation expiré');
+      throw new UnauthorizedException('RESET_TOKEN_EXPIRED');
     }
 
     user.password = await bcrypt.hash(dto.password, 10);
@@ -188,7 +264,7 @@ export class AuthService {
     await this.usersService.save(user);
 
     return {
-      message: 'Mot de passe réinitialisé avec succès',
+      message: 'PASSWORD_RESET_SUCCESS',
     };
   }
 }
