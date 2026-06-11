@@ -124,7 +124,7 @@ export class AuthService {
       throw new UnauthorizedException('EMAIL_NOT_CONFIRMED');
     }
 
-    if (user.role !== UserRole.ADMIN) {
+    if (user.role === UserRole.ADMIN) {
       const code = this.generateTwoFactorCode();
 
       user.adminTwoFactorCode = await bcrypt.hash(code, 10);
@@ -155,7 +155,7 @@ export class AuthService {
       throw new UnauthorizedException('INVALID_2FA_CODE');
     }
 
-    if (user.role === UserRole.ADMIN) {
+    if (user.role !== UserRole.ADMIN) {
       throw new UnauthorizedException('TWO_FACTOR_NOT_REQUIRED');
     }
 
