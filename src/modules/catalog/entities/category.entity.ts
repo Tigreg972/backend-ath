@@ -6,7 +6,9 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+
 import { Product } from './product.entity';
+import { CategoryTranslation } from './category-translation.entity';
 
 @Entity('categories')
 export class Category {
@@ -33,6 +35,13 @@ export class Category {
 
   @OneToMany(() => Product, (product) => product.category)
   products!: Product[];
+
+  @OneToMany(
+    () => CategoryTranslation,
+    (translation) => translation.category,
+    { cascade: true },
+  )
+  translations!: CategoryTranslation[];
 
   @CreateDateColumn()
   createdAt!: Date;

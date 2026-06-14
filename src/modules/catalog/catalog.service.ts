@@ -3,7 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 
 import { Category } from './entities/category.entity';
+import { CategoryTranslation } from './entities/category-translation.entity';
 import { Product } from './entities/product.entity';
+import { ProductTranslation } from './entities/product-translation.entity';
 import { HomeService } from '../home/home.service';
 
 @Injectable()
@@ -12,8 +14,14 @@ export class CatalogService {
     @InjectRepository(Category)
     private readonly categoriesRepository: Repository<Category>,
 
+    @InjectRepository(CategoryTranslation)
+    private readonly categoryTranslationsRepository: Repository<CategoryTranslation>,
+
     @InjectRepository(Product)
     private readonly productsRepository: Repository<Product>,
+
+    @InjectRepository(ProductTranslation)
+    private readonly productTranslationsRepository: Repository<ProductTranslation>,
 
     private readonly homeService: HomeService,
   ) {}
@@ -32,7 +40,29 @@ export class CatalogService {
     return String(techSpecs);
   }
 
-  private mapProduct(product: Product) {
+  private async mapCategory(category: Category) {
+    const translations =
+      category.translations ||
+      (await this.categoryTranslationsRepository.find({
+        where: { categoryId: category.id },
+        order: { language: 'ASC' },
+      }));
+
+    return {
+      id: category.id,
+      name: category.name,
+      slug: category.slug,
+      description: category.description,
+      imageUrl: category.imageUrl,
+      displayOrder: category.displayOrder,
+      isActive: category.isActive,
+      translations,
+      createdAt: category.createdAt,
+      updatedAt: category.updatedAt,
+    };
+  }
+
+  private async mapProduct(product: Product) {
     const images =
       product.images?.map((image) => ({
         id: image.id,
@@ -43,6 +73,13 @@ export class CatalogService {
         displayOrder: image.displayOrder,
       })) || [];
 
+    const translations =
+      product.translations ||
+      (await this.productTranslationsRepository.find({
+        where: { productId: product.id },
+        order: { language: 'ASC' },
+      }));
+
     return {
       id: product.id,
       sku: product.sku,
@@ -51,6 +88,7 @@ export class CatalogService {
       shortDescription: product.shortDescription,
       description: product.description,
       techSpecs: this.formatTechSpecs(product.techSpecs),
+      rawTechSpecs: product.techSpecs,
       priceCents: product.priceCents,
       stock: product.stock,
       priority: product.priority,
@@ -66,6 +104,7 @@ export class CatalogService {
         : null,
       imageUrl: images[0]?.url || '',
       images,
+      translations,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
     };
@@ -79,13 +118,8 @@ export class CatalogService {
       Array(second.length + 1).fill(0),
     );
 
-    for (let i = 0; i <= first.length; i += 1) {
-      matrix[i][0] = i;
-    }
-
-    for (let j = 0; j <= second.length; j += 1) {
-      matrix[0][j] = j;
-    }
+    for (let i = 0; i <= first.length; i += 1) matrix[i][0] = i;
+    for (let j = 0; j <= second.length; j += 1) matrix[0][j] = j;
 
     for (let i = 1; i <= first.length; i += 1) {
       for (let j = 1; j <= second.length; j += 1) {
@@ -113,6 +147,11 @@ export class CatalogService {
       product.description,
       product.sku,
       this.formatTechSpecs(product.techSpecs),
+      ...(product.translations || []).flatMap((translation) => [
+        translation.name,
+        translation.shortDescription,
+        translation.description,
+      ]),
     ]
       .filter(Boolean)
       .map((value) => String(value).toLowerCase());
@@ -130,52 +169,66 @@ export class CatalogService {
   }
 
   async getHome() {
-  const slides = await this.homeService.getPublicSlides();
-  const homeContent = await this.homeService.getHomeContent();
+    const slides = await this.homeService.getPublicSlides();
+    const homeContent = await this.homeService.getHomeContent();
 
-  const categories = await this.categoriesRepository.find({
-    where: { isActive: true },
-    order: { displayOrder: 'ASC' },
-  });
+    const categories = await this.categoriesRepository.find({
+      where: { isActive: true },
+      relations: { translations: true },
+      order: { displayOrder: 'ASC' },
+    });
 
-  const featured = await this.productsRepository.find({
-    where: {
-      isActive: true,
-      isFeatured: true,
-    },
-    order: {
-      priority: 'DESC',
-    },
-  });
+    const featured = await this.productsRepository.find({
+      where: {
+        isActive: true,
+        isFeatured: true,
+      },
+      relations: {
+        category: true,
+        images: true,
+        translations: true,
+      },
+      order: {
+        priority: 'DESC',
+      },
+    });
 
-  return {
-    slides,
-    homeText: homeContent.homeText,
-    categories,
-    featured,
-  };
-}
+    return {
+      slides,
+      homeText: homeContent.homeText,
+      categories: await Promise.all(
+        categories.map((category) => this.mapCategory(category)),
+      ),
+      featured: await Promise.all(
+        featured.map((product) => this.mapProduct(product)),
+      ),
+    };
+  }
 
   async getCategories() {
-    return this.categoriesRepository.find({
+    const categories = await this.categoriesRepository.find({
       where: { isActive: true },
+      relations: { translations: true },
       order: {
         displayOrder: 'ASC',
         name: 'ASC',
       },
     });
+
+    return Promise.all(categories.map((category) => this.mapCategory(category)));
   }
 
   async getCategoryBySlug(slug: string) {
     const category = await this.categoriesRepository.findOne({
       where: { slug, isActive: true },
+      relations: { translations: true },
     });
 
     if (!category) {
       throw new NotFoundException('Catégorie introuvable');
     }
 
-    return category;
+    return this.mapCategory(category);
   }
 
   async getProducts(query: any) {
@@ -193,6 +246,7 @@ export class CatalogService {
       .createQueryBuilder('product')
       .leftJoinAndSelect('product.category', 'category')
       .leftJoinAndSelect('product.images', 'images')
+      .leftJoinAndSelect('product.translations', 'translations')
       .where('product.isActive = :isActive', { isActive: true });
 
     if (rawSearch && matchMode !== 'one_char_diff') {
@@ -214,6 +268,15 @@ export class CatalogService {
               .orWhere('product.sku LIKE :containsSearch', { containsSearch })
               .orWhere('JSON_EXTRACT(product.techSpecs, "$") LIKE :containsSearch', {
                 containsSearch,
+              })
+              .orWhere('translations.name LIKE :containsSearch', {
+                containsSearch,
+              })
+              .orWhere('translations.description LIKE :containsSearch', {
+                containsSearch,
+              })
+              .orWhere('translations.shortDescription LIKE :containsSearch', {
+                containsSearch,
               });
           }),
         );
@@ -225,12 +288,14 @@ export class CatalogService {
               OR LOWER(product.description) = LOWER(:exactSearch)
               OR LOWER(product.shortDescription) = LOWER(:exactSearch)
               OR LOWER(product.sku) = LOWER(:exactSearch)
+              OR LOWER(translations.name) = LOWER(:exactSearch)
               THEN 1
 
             WHEN LOWER(product.name) LIKE LOWER(:startsWithSearch)
               OR LOWER(product.description) LIKE LOWER(:startsWithSearch)
               OR LOWER(product.shortDescription) LIKE LOWER(:startsWithSearch)
               OR LOWER(product.sku) LIKE LOWER(:startsWithSearch)
+              OR LOWER(translations.name) LIKE LOWER(:startsWithSearch)
               THEN 3
 
             WHEN LOWER(product.name) LIKE LOWER(:containsSearch)
@@ -238,6 +303,9 @@ export class CatalogService {
               OR LOWER(product.shortDescription) LIKE LOWER(:containsSearch)
               OR LOWER(product.sku) LIKE LOWER(:containsSearch)
               OR LOWER(JSON_EXTRACT(product.techSpecs, "$")) LIKE LOWER(:containsSearch)
+              OR LOWER(translations.name) LIKE LOWER(:containsSearch)
+              OR LOWER(translations.description) LIKE LOWER(:containsSearch)
+              OR LOWER(translations.shortDescription) LIKE LOWER(:containsSearch)
               THEN 4
 
             ELSE 5
@@ -269,6 +337,12 @@ export class CatalogService {
               .orWhere('LOWER(product.sku) = LOWER(:exactSearch)', {
                 exactSearch,
               })
+              .orWhere('LOWER(translations.name) = LOWER(:exactSearch)', {
+                exactSearch,
+              })
+              .orWhere('LOWER(translations.description) = LOWER(:exactSearch)', {
+                exactSearch,
+              })
               .orWhere(
                 'LOWER(JSON_EXTRACT(product.techSpecs, "$")) = LOWER(:exactSearch)',
                 { exactSearch },
@@ -293,6 +367,12 @@ export class CatalogService {
               .orWhere('product.sku LIKE :startsWithSearch', {
                 startsWithSearch,
               })
+              .orWhere('translations.name LIKE :startsWithSearch', {
+                startsWithSearch,
+              })
+              .orWhere('translations.description LIKE :startsWithSearch', {
+                startsWithSearch,
+              })
               .orWhere(
                 'JSON_EXTRACT(product.techSpecs, "$") LIKE :startsWithSearch',
                 { startsWithSearch },
@@ -313,6 +393,15 @@ export class CatalogService {
                 containsSearch,
               })
               .orWhere('product.sku LIKE :containsSearch', { containsSearch })
+              .orWhere('translations.name LIKE :containsSearch', {
+                containsSearch,
+              })
+              .orWhere('translations.description LIKE :containsSearch', {
+                containsSearch,
+              })
+              .orWhere('translations.shortDescription LIKE :containsSearch', {
+                containsSearch,
+              })
               .orWhere('JSON_EXTRACT(product.techSpecs, "$") LIKE :containsSearch', {
                 containsSearch,
               });
@@ -373,7 +462,9 @@ export class CatalogService {
       const total = sortedProducts.length;
 
       return {
-        items: paginatedProducts.map((product) => this.mapProduct(product)),
+        items: await Promise.all(
+          paginatedProducts.map((product) => this.mapProduct(product)),
+        ),
         meta: {
           total,
           page,
@@ -402,7 +493,7 @@ export class CatalogService {
     const [items, total] = await qb.getManyAndCount();
 
     return {
-      items: items.map((product) => this.mapProduct(product)),
+      items: await Promise.all(items.map((product) => this.mapProduct(product))),
       meta: {
         total,
         page,
@@ -508,6 +599,7 @@ export class CatalogService {
       relations: {
         category: true,
         images: true,
+        translations: true,
       },
     });
 

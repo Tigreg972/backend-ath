@@ -81,6 +81,24 @@ export class AdminService {
     return safeUser;
   }
 
+  private normalizeUploadUrl(url?: string | null) {
+    if (!url) return '';
+
+    if (url.startsWith('/uploads/')) return url;
+
+    try {
+      const parsedUrl = new URL(url);
+
+      if (parsedUrl.pathname.startsWith('/uploads/')) {
+        return parsedUrl.pathname;
+      }
+    } catch {
+      // URL relative ou texte normal
+    }
+
+    return url;
+  }
+
   private getStatsPeriod(period?: string) {
     const normalizedPeriod = period === '5w' ? '5w' : '7d';
     const now = new Date();
@@ -146,10 +164,11 @@ export class AdminService {
             slug: category.slug,
           }
         : null,
-      imageUrl: images[0]?.url || '',
+      imageUrl: this.normalizeUploadUrl(images[0]?.url || ''),
       images: images.map((image) => ({
         id: image.id,
-        url: image.url,
+        url: this.normalizeUploadUrl(image.url),
+        imageUrl: this.normalizeUploadUrl(image.url),
         alt: image.altText || product.name,
         altText: image.altText || product.name,
         displayOrder: image.displayOrder,
@@ -159,9 +178,7 @@ export class AdminService {
   }
 
   private mapShippingAddress(address: Address | null) {
-    if (!address) {
-      return null;
-    }
+    if (!address) return null;
 
     return {
       id: address.id,
@@ -221,7 +238,7 @@ export class AdminService {
         quantity: item.quantity,
         priceCents: item.unitPriceCents,
         totalCents: item.totalCents,
-        imageUrl: images[0]?.url || '',
+        imageUrl: this.normalizeUploadUrl(images[0]?.url || ''),
       });
     }
 
@@ -418,7 +435,7 @@ export class AdminService {
     if (dto.imageUrl) {
       await this.imagesRepository.save({
         productId: savedProduct.id,
-        url: dto.imageUrl,
+        url: this.normalizeUploadUrl(dto.imageUrl),
         altText: savedProduct.name,
         displayOrder: 0,
       });
@@ -428,9 +445,9 @@ export class AdminService {
       for (const image of dto.images) {
         await this.imagesRepository.save({
           productId: savedProduct.id,
-          url: image.url,
+          url: this.normalizeUploadUrl(image.url),
           altText: image.alt || savedProduct.name,
-          displayOrder: image.displayOrder || 0,
+          displayOrder: image.displayOrder || 1,
         });
       }
     }
@@ -465,22 +482,25 @@ export class AdminService {
     await this.productsRepository.save(product);
 
     if (dto.imageUrl) {
-      const existingImage = await this.imagesRepository.findOne({
+      const cleanImageUrl = this.normalizeUploadUrl(dto.imageUrl);
+
+      const existingMainImage = await this.imagesRepository.findOne({
         where: {
           productId: product.id,
           displayOrder: 0,
         },
       });
 
-      if (existingImage) {
-        existingImage.url = dto.imageUrl;
-        existingImage.altText = product.name;
+      if (existingMainImage) {
+        existingMainImage.url = cleanImageUrl;
+        existingMainImage.altText = product.name;
+        existingMainImage.displayOrder = 0;
 
-        await this.imagesRepository.save(existingImage);
+        await this.imagesRepository.save(existingMainImage);
       } else {
         await this.imagesRepository.save({
           productId: product.id,
-          url: dto.imageUrl,
+          url: cleanImageUrl,
           altText: product.name,
           displayOrder: 0,
         });
@@ -499,18 +519,66 @@ export class AdminService {
       throw new NotFoundException('PRODUCT_NOT_FOUND');
     }
 
-    const currentImagesCount = await this.imagesRepository.count({
-      where: { productId },
+    const cleanImageUrl = this.normalizeUploadUrl(imageUrl);
+
+    const existingMainImage = await this.imagesRepository.findOne({
+      where: {
+        productId,
+        displayOrder: 0,
+      },
     });
 
-    await this.imagesRepository.save({
-      productId,
-      url: imageUrl,
-      altText: product.name,
-      displayOrder: currentImagesCount,
-    });
+    if (existingMainImage) {
+      existingMainImage.url = cleanImageUrl;
+      existingMainImage.altText = product.name;
+      existingMainImage.displayOrder = 0;
+
+      await this.imagesRepository.save(existingMainImage);
+    } else {
+      await this.imagesRepository.save({
+        productId,
+        url: cleanImageUrl,
+        altText: product.name,
+        displayOrder: 0,
+      });
+    }
 
     return this.findProductById(productId);
+  }
+
+  async uploadProductGalleryImage(productId: number, imageUrl: string) {
+    const product = await this.productsRepository.findOne({
+      where: { id: productId },
+    });
+
+    if (!product) {
+      throw new NotFoundException('PRODUCT_NOT_FOUND');
+    }
+
+    const images = await this.imagesRepository.find({
+      where: { productId },
+      order: { displayOrder: 'DESC', id: 'DESC' },
+    });
+
+    const maxDisplayOrder = images.length
+      ? Math.max(...images.map((image) => image.displayOrder || 0))
+      : 0;
+
+    const image = await this.imagesRepository.save({
+      productId,
+      url: this.normalizeUploadUrl(imageUrl),
+      altText: product.name,
+      displayOrder: Math.max(maxDisplayOrder + 1, 1),
+    });
+
+    return {
+      id: image.id,
+      url: this.normalizeUploadUrl(image.url),
+      imageUrl: this.normalizeUploadUrl(image.url),
+      alt: image.altText || product.name,
+      altText: image.altText || product.name,
+      displayOrder: image.displayOrder,
+    };
   }
 
   async getProductImages(productId: number) {
@@ -522,14 +590,18 @@ export class AdminService {
       throw new NotFoundException('PRODUCT_NOT_FOUND');
     }
 
-    const images = await this.imagesRepository.find({
-      where: { productId },
-      order: { displayOrder: 'ASC', id: 'ASC' },
-    });
+    const images = await this.imagesRepository
+      .createQueryBuilder('image')
+      .where('image.productId = :productId', { productId })
+      .andWhere('image.displayOrder > 0')
+      .orderBy('image.displayOrder', 'ASC')
+      .addOrderBy('image.id', 'ASC')
+      .getMany();
 
     return images.map((image) => ({
       id: image.id,
-      url: image.url,
+      url: this.normalizeUploadUrl(image.url),
+      imageUrl: this.normalizeUploadUrl(image.url),
       alt: image.altText || product.name,
       altText: image.altText || product.name,
       displayOrder: image.displayOrder,
@@ -555,7 +627,7 @@ export class AdminService {
     }
 
     if (dto.url !== undefined) {
-      image.url = dto.url;
+      image.url = this.normalizeUploadUrl(dto.url);
     }
 
     if (dto.alt !== undefined || dto.altText !== undefined) {
@@ -563,7 +635,7 @@ export class AdminService {
     }
 
     if (dto.displayOrder !== undefined) {
-      image.displayOrder = Number(dto.displayOrder);
+      image.displayOrder = Math.max(Number(dto.displayOrder), 1);
     }
 
     await this.imagesRepository.save(image);
@@ -612,7 +684,7 @@ export class AdminService {
       name: dto.name,
       slug: dto.slug,
       description: dto.description,
-      imageUrl: dto.imageUrl,
+      imageUrl: this.normalizeUploadUrl(dto.imageUrl),
       displayOrder: dto.displayOrder || 0,
       isActive: dto.isActive ?? true,
     });
@@ -633,7 +705,10 @@ export class AdminService {
       name: dto.name ?? category.name,
       slug: dto.slug ?? category.slug,
       description: dto.description ?? category.description,
-      imageUrl: dto.imageUrl ?? category.imageUrl,
+      imageUrl:
+        dto.imageUrl !== undefined
+          ? this.normalizeUploadUrl(dto.imageUrl)
+          : category.imageUrl,
       displayOrder: dto.displayOrder ?? category.displayOrder,
       isActive: dto.isActive ?? category.isActive,
     });
@@ -650,7 +725,7 @@ export class AdminService {
       throw new NotFoundException('CATEGORY_NOT_FOUND');
     }
 
-    category.imageUrl = imageUrl;
+    category.imageUrl = this.normalizeUploadUrl(imageUrl);
 
     return this.categoriesRepository.save(category);
   }
@@ -749,25 +824,11 @@ export class AdminService {
       user.isEmailConfirmed = false;
     }
 
-    if (dto.firstName !== undefined) {
-      user.firstName = dto.firstName;
-    }
-
-    if (dto.lastName !== undefined) {
-      user.lastName = dto.lastName;
-    }
-
-    if (dto.phone !== undefined) {
-      user.phone = dto.phone;
-    }
-
-    if (dto.role !== undefined) {
-      user.role = dto.role as any;
-    }
-
-    if (dto.isActive !== undefined) {
-      user.isActive = dto.isActive;
-    }
+    if (dto.firstName !== undefined) user.firstName = dto.firstName;
+    if (dto.lastName !== undefined) user.lastName = dto.lastName;
+    if (dto.phone !== undefined) user.phone = dto.phone;
+    if (dto.role !== undefined) user.role = dto.role as any;
+    if (dto.isActive !== undefined) user.isActive = dto.isActive;
 
     user.fullName = `${user.firstName} ${user.lastName}`.trim();
 

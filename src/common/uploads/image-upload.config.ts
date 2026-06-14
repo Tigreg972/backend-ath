@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 
-export function imageUploadOptions(folder: 'products' | 'categories') {
+export function imageUploadOptions(folder: 'products' | 'categories' | 'home',) {
   return {
     storage: diskStorage({
       destination: `./uploads/${folder}`,
